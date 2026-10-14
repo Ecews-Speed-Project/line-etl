@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.json
+!current_headers.json
+.env
+.env.*
+*.xlsx
+*.xls
+*.csv
+*.zip
+*.log
+work/
+outputs/
+.pytest_cache/

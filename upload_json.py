@@ -1,0 +1,106 @@
+"""Upload converted JSON into PostgreSQL using a single transaction."""
+import argparse
+import getpass
+import json
+import os
+from pathlib import Path
+import re
+import hashlib
+from datetime import date
+
+
+def parse_period(value):
+    if type(value) is date:
+        return value
+    if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', value):
+        raise ValueError('Choose a valid reporting period date (YYYY-MM-DD)')
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ValueError('Choose a valid reporting period date (YYYY-MM-DD)') from None
+
+
+def read_document(path):
+    def reject_constant(value):
+        raise ValueError(f'Invalid JSON number: {value}')
+    with Path(path).open(encoding='utf-8') as handle:
+        doc = json.load(handle, parse_constant=reject_constant)
+    if doc.get('format_version') != 1:
+        raise ValueError('Unsupported JSON format')
+    if not re.fullmatch(r'[0-9a-f]{64}', doc.get('source_sha256', '')):
+        raise ValueError('Missing or invalid source hash')
+    for key in ('sheet', 'source_file'):
+        if not isinstance(doc.get(key), str) or not doc[key]:
+            raise ValueError(f'Missing {key}')
+    headers = doc.get('headers')
+    if not isinstance(headers, list) or not headers or any(not isinstance(h, str) or not h for h in headers) or len(set(headers)) != len(headers):
+        raise ValueError('Invalid headers')
+    if not isinstance(doc.get('records'), list):
+        raise ValueError('Missing records')
+    seen = set()
+    for record in doc['records']:
+        row = record.get('source_row')
+        if type(row) is not int or row < 1 or row in seen:
+            raise ValueError('Invalid or duplicate source row')
+        seen.add(row)
+        if not isinstance(record.get('data'), dict) or set(record['data']) != set(headers):
+            raise ValueError(f'Invalid data keys at row {row}')
+    return doc
+
+
+def upload(path, schema='public', table='linelist_records', dry_run=False, connection=None, period=None):
+    doc = read_document(path)
+    if dry_run:
+        return len(doc['records'])
+    period = parse_period(period)
+    snapshot_hash = doc['source_sha256']
+    import_hash = hashlib.sha256(('linelist-period-v1:' + snapshot_hash + ':' + period.isoformat()).encode()).hexdigest()
+    import psycopg
+    from psycopg import sql
+    from psycopg.types.json import Jsonb
+    # libpq reads PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, PGSSLMODE.
+    # Never print credentials or connection strings.
+    if connection is None and not os.environ.get('PGHOST'):
+        raise ValueError('Set PGHOST to the PostgreSQL server hostname or IP address')
+    password = os.environ.get('PGPASSWORD')
+    if connection is None and password is None:
+        password = getpass.getpass('PostgreSQL password: ')
+    target = sql.Identifier(schema, table)
+    config = connection if connection is not None else dict(
+        dbname=os.environ.get('PGDATABASE', 'ecews'),
+        user=os.environ.get('PGUSER', 'postgres'), password=password)
+    with psycopg.connect(**config, connect_timeout=10) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql.SQL('''CREATE TABLE IF NOT EXISTS {} (
+                source_sha256 text NOT NULL,
+                source_file text NOT NULL,
+                sheet text NOT NULL,
+                source_row integer NOT NULL,
+                data jsonb NOT NULL,
+                imported_at timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (source_sha256, sheet, source_row)
+            )''').format(target))
+            cur.execute(sql.SQL('ALTER TABLE {} ADD COLUMN IF NOT EXISTS period date, ADD COLUMN IF NOT EXISTS source_snapshot_sha256 text').format(target))
+            statement = sql.SQL('''INSERT INTO {} (source_sha256, source_file, sheet, source_row, data, period, source_snapshot_sha256)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (source_sha256, sheet, source_row) DO NOTHING''').format(target)
+            cur.executemany(statement, ((import_hash, doc['source_file'], doc['sheet'],
+                                        r['source_row'], Jsonb(r['data']), period, snapshot_hash) for r in doc['records']))
+            inserted = cur.rowcount
+    return inserted
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('source', type=Path)
+    parser.add_argument('--schema', default='public')
+    parser.add_argument('--table', default='linelist_records')
+    parser.add_argument('--dry-run', action='store_true', help='Validate JSON without connecting')
+    parser.add_argument('--period', help='Reporting date YYYY-MM-DD (required for database upload)')
+    args = parser.parse_args()
+    count = upload(args.source, args.schema, args.table, args.dry_run, period=args.period)
+    print(f'{"Validated" if args.dry_run else "Inserted"} {count:,} rows')
+
+
+if __name__ == '__main__':
+    main()
