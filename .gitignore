@@ -14,3 +14,4 @@ work/
 outputs/
 .pytest_cache/
 .local_jobs/
+*.json.gz

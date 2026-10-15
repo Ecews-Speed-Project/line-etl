@@ -8,6 +8,7 @@ import time
 import uuid
 
 from excel_to_json import convert
+from json_compression import compress_json
 from web_common import ROOT
 
 JOB_ROOT = Path(os.environ.get('LINELIST_JOB_DIR', str(ROOT/'.local_jobs')))
@@ -80,7 +81,10 @@ def run(job_id):
                       job['sheet'] or None,job['header_row'],report=report,
                       progress=lambda event:publish(job_id,**event))
         (folder(job_id)/'cell_errors.json').write_text(json.dumps(report,ensure_ascii=False),encoding='utf-8')
-        publish(job_id,state='completed',phase='completed',records=count,flagged_cells=report['flagged_cells'])
+        compress_json(folder(job_id)/'linelist.json',folder(job_id)/'linelist.json.gz',
+                      progress=lambda event:publish(job_id,**event))
+        publish(job_id,state='completed',phase='completed',records=count,flagged_cells=report['flagged_cells'],
+                json_bytes=(folder(job_id)/'linelist.json').stat().st_size,gzip_bytes=(folder(job_id)/'linelist.json.gz').stat().st_size)
     except Exception as exc:
         message=str(exc) if isinstance(exc,(ValueError,KeyError)) else 'Could not convert this workbook. Check its format and available disk space.'
         publish(job_id,state='failed',phase='failed',error=message)

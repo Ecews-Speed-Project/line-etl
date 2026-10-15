@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import hashlib
 from datetime import date
+from json_compression import load_json
 
 
 def parse_period(value):
@@ -25,8 +26,8 @@ def read_document(path,progress=None):
     notify(dict(phase='reading_json'))
     def reject_constant(value):
         raise ValueError(f'Invalid JSON number: {value}')
-    with Path(path).open(encoding='utf-8') as handle:
-        doc = json.load(handle, parse_constant=reject_constant)
+    doc=load_json(path,notify,reject_constant)
+    if not isinstance(doc,dict):raise ValueError('JSON must contain a linelist document object')
     if doc.get('format_version') != 1:
         raise ValueError('Unsupported JSON format')
     if not re.fullmatch(r'[0-9a-f]{64}', doc.get('source_sha256', '')):

@@ -1,4 +1,5 @@
 import io
+import gzip
 import json
 from pathlib import Path
 import tempfile
@@ -51,6 +52,10 @@ class JobTests(unittest.TestCase):
         self.assertEqual(result['processed'],1101)
         self.assertEqual(result['bytes_received'],len(content.getvalue()))
         doc=self.client.get('/api/conversions/'+job_id+'/download').json()
+        compressed=self.client.get('/api/conversions/'+job_id+'/download?compressed=true')
+        self.assertEqual(compressed.status_code,200)
+        self.assertNotIn('content-encoding',compressed.headers)
+        self.assertEqual(json.loads(gzip.decompress(compressed.content)),doc)
         self.assertEqual(doc['records'][0]['data']['State'],'Akwa ibom')
         report=self.client.get('/api/conversions/'+job_id+'/errors').json()
         self.assertEqual(report['total'],1)

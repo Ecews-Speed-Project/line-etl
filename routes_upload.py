@@ -17,15 +17,15 @@ def upload_json(file: UploadFile = File(...), host: str = Form('localhost'),
                 username: str = Form('postgres'), password: str = Form(''),
                 schema: str = Form('public'), table: str = Form('linelist_records'),
                 acknowledge_errors: bool = Form(False), period: str = Form(...),progress_id:str=Form('')):
-    if not (file.filename or '').lower().endswith('.json'):
-        raise HTTPException(400, 'Choose the JSON produced by step 1')
+    if not (file.filename or '').lower().endswith(('.json','.json.gz')):
+        raise HTTPException(400, 'Choose a .json or .json.gz file produced by conversion')
     notify=lambda event:None
     try:
         notify=callback(progress_id,'upload')
         notify(dict(phase='saving_file'))
         selected_period = parse_period(period)
         with tempfile.TemporaryDirectory(prefix='linelist_') as folder:
-            source = Path(folder) / 'upload.json'
+            source = Path(folder) / ('upload.json.gz' if (file.filename or '').lower().endswith('.gz') else 'upload.json')
             save_upload(file, source)
             document = read_document(source,progress=notify)
             if document.get('conversion_report', {}).get('issues') and not acknowledge_errors:
@@ -52,7 +52,7 @@ def review_json(file: UploadFile = File(...), offset: int = Form(0), limit: int 
         if offset < 0 or not 1 <= limit <= 200:
             raise ValueError('Invalid review page')
         with tempfile.TemporaryDirectory(prefix='linelist_review_') as folder:
-            path = Path(folder) / 'review.json'
+            path = Path(folder) / ('review.json.gz' if (file.filename or '').lower().endswith('.gz') else 'review.json')
             save_upload(file, path)
             doc = read_document(path)
             report = doc.get('conversion_report', {})

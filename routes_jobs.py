@@ -57,10 +57,12 @@ def job_status(job_id:str):
 
 
 @router.get('/api/conversions/{job_id}/download')
-def download(job_id:str):
+def download(job_id:str,compressed:bool=False):
     job=job_status(job_id)
     if job['state']!='completed':raise HTTPException(409,'Conversion is not complete')
-    return FileResponse(folder(job_id)/'linelist.json',media_type='application/json',filename='linelist.json')
+    filename='linelist.json.gz' if compressed else 'linelist.json'
+    if not (folder(job_id)/filename).exists():raise HTTPException(404,'Compressed download is not available for this older job; convert again or download the plain JSON')
+    return FileResponse(folder(job_id)/filename,media_type='application/gzip' if compressed else 'application/json',filename=filename)
 
 
 @router.get('/api/conversions/{job_id}/errors')

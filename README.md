@@ -1,5 +1,22 @@
 # Linelist ETL
 
+## Compressed JSON transfers
+
+Use Download JSON.gz after Excel conversion to transfer a smaller file. The
+header-mapping ZIP also contains linelist.json.gz. Review and PostgreSQL upload
+accept .json and .json.gz. Compressed files are first saved to the local temporary
+upload path, then decompressed through a bounded gzip reader directly into the
+JSON parser; a separate extracted JSON file is not written. Progress includes
+the decompression stage and expanded MB, followed by validation and database rows.
+
+LINELIST_MAX_JSON_MB limits expanded JSON size (default 2048 MB), independently
+of the uploaded-file limit. Corrupt or truncated gzip uploads are rejected before
+database writes. The JSON parser still holds the parsed document in memory;
+compression reduces transfer size, not the memory needed for parsed records.
+Plain and compressed copies preserve the same snapshot hash and reporting period
+and therefore use the same duplicate-skipping behavior. Gzip downloads are served
+as attachments, without Content-Encoding, so the browser keeps the .gz file.
+
 ## Database progress
 
 JSON uploads display file-transfer progress followed by JSON reading, validation,

@@ -7,6 +7,7 @@ import zipfile
 
 from openpyxl import Workbook, load_workbook
 from excel_to_json import convert, normalize_state
+from json_compression import compress_json
 
 TARGET = json.loads((Path(__file__).parent / 'current_headers.json').read_text(encoding='utf-8'))
 SUGGESTIONS = {
@@ -100,10 +101,11 @@ def standardize(source, folder, mapping, sheet=None, header_row=1, allow_missing
         ws.append(cells)
     book.save(folder / 'current_linelist.xlsx')
     (folder / 'linelist.json').write_text(json.dumps(doc, ensure_ascii=False, allow_nan=False), encoding='utf-8')
+    compress_json(folder/'linelist.json',folder/'linelist.json.gz')
     (folder / 'mapping_report.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     (folder / 'cell_errors.json').write_text(json.dumps(doc['conversion_report'], indent=2), encoding='utf-8')
     result = folder / 'converted_linelist.zip'
     with zipfile.ZipFile(result, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for name in ('current_linelist.xlsx', 'linelist.json', 'mapping_report.json', 'cell_errors.json', 'original_data.json'):
+        for name in ('current_linelist.xlsx', 'linelist.json', 'linelist.json.gz', 'mapping_report.json', 'cell_errors.json', 'original_data.json'):
             archive.write(folder / name, name)
     return result
