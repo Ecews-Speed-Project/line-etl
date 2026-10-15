@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    image: line-etl:latest
+    ports:
+      - "5003:8000"
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      LINELIST_MAX_UPLOAD_MB: "2048"

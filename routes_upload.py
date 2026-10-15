@@ -1,3 +1,4 @@
+from web_common import database_connection
 from pathlib import Path
 import json
 import tempfile
@@ -12,7 +13,7 @@ from upload_json import read_document, parse_period, upload
 @router.post('/api/upload')
 def upload_json(file: UploadFile = File(...), host: str = Form('localhost'),
                 port: int = Form(5432), database: str = Form('ecews'),
-                username: str = Form('postgres'), password: str = Form(...),
+                username: str = Form('postgres'), password: str = Form(''),
                 schema: str = Form('public'), table: str = Form('linelist_records'),
                 acknowledge_errors: bool = Form(False), period: str = Form(...)):
     if not (file.filename or '').lower().endswith('.json'):
@@ -27,8 +28,9 @@ def upload_json(file: UploadFile = File(...), host: str = Form('localhost'),
                 raise ValueError('Review the flagged cells and acknowledge them before uploading')
             del document
             total = upload(source, dry_run=True)
-            inserted = upload(source, schema, table, connection=dict(
-                host=host, port=port, dbname=database, user=username, password=password), period=selected_period)
+            inserted = upload(source, schema, table,
+                              connection=database_connection(host, port, database, username, password),
+                              period=selected_period)
             return dict(total=total, inserted=inserted, skipped=total-inserted, period=selected_period.isoformat())
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from None

@@ -1,3 +1,4 @@
+from web_common import database_connection
 from pathlib import Path
 import json
 import tempfile
@@ -12,11 +13,11 @@ from correct_types import correct
 
 @router.post('/api/correct-type')
 def correct_type(host: str = Form('localhost'), port: int = Form(5432), database: str = Form('ecews'),
-                 username: str = Form('postgres'), password: str = Form(...), schema: str = Form('public'),
+                 username: str = Form('postgres'), password: str = Form(''), schema: str = Form('public'),
                  source_table: str = Form(...), source_sha256: str = Form(...), sheet: str = Form(...),
                  source_row: int = Form(...), heading: str = Form(...), value: str = Form(...)):
     try:
-        return correct(dict(host=host,port=port,dbname=database,user=username,password=password),
+        return correct(database_connection(host, port, database, username, password),
                        schema,source_table,source_sha256,sheet,source_row,heading,value)
     except ValueError as exc:
         raise HTTPException(400,str(exc)) from None
@@ -27,10 +28,10 @@ def correct_type(host: str = Form('localhost'), port: int = Form(5432), database
 @router.post('/api/flat/{action}')
 def flat_action(action: str, host: str = Form('localhost'), port: int = Form(5432),
                 database: str = Form('ecews'), username: str = Form('postgres'),
-                password: str = Form(...), schema: str = Form('public'),
+                password: str = Form(''), schema: str = Form('public'),
                 source_table: str = Form('linelist_records'), offset: int = Form(0), limit: int = Form(25),
                 period: str = Form('')):
-    connection = dict(host=host, port=port, dbname=database, user=username, password=password)
+    connection = database_connection(host, port, database, username, password)
     try:
         if action == 'build':
             return flatten(connection, schema, source_table)

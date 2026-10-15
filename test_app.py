@@ -1,6 +1,7 @@
 import io
 import json
 import unittest
+import os
 from unittest.mock import patch
 from types import SimpleNamespace
 
@@ -10,6 +11,63 @@ from app import app, save_upload
 
 
 class AppTests(unittest.TestCase):
+    def test_session_tampering_expiry_logout_and_login_limit(self):
+        from auth import COOKIE, MAX_AGE, _attempts
+        _attempts.clear()
+        with patch.dict(os.environ, {'APP_ACCESS_USERNAME': 'admin', 'APP_ACCESS_PASSWORD': 'test-secret'}):
+            client = TestClient(app)
+            client.post('/login', data={'username': 'admin', 'password': 'test-secret'})
+            token = client.cookies.get(COOKIE)
+            self.assertEqual(client.get('/api/dashboard').status_code, 405)
+            with patch('auth.time.time', return_value=__import__('time').time() + MAX_AGE + 10):
+                self.assertEqual(client.get('/api/dashboard').status_code, 401)
+            client.cookies.set(COOKIE, token + 'tampered')
+            self.assertEqual(client.get('/api/dashboard').status_code, 401)
+            client.cookies.clear()
+            client.post('/login', data={'username': 'admin', 'password': 'test-secret'})
+            client.post('/logout')
+            self.assertEqual(client.get('/api/dashboard').status_code, 401)
+            for _ in range(5):
+                self.assertEqual(client.post('/login', data={'username': 'admin', 'password': 'wrong'}).status_code, 401)
+            self.assertEqual(client.post('/login', data={'username': 'admin', 'password': 'wrong'}).status_code, 429)
+        _attempts.clear()
+
+    def test_network_access_requires_login_and_checks_origin(self):
+        with patch.dict(os.environ, {'APP_ACCESS_USERNAME': 'linelist',
+                                     'APP_ACCESS_PASSWORD': 'test-access-password',
+                                     'PUBLIC_ORIGIN': 'http://server.example:5003'}):
+            client = TestClient(app)
+            self.assertEqual(client.get('/', follow_redirects=False).status_code, 303)
+            self.assertEqual(client.get('/healthz').status_code, 200)
+            self.assertEqual(client.post('/login', data={'username': 'linelist', 'password': 'wrong'}).status_code, 401)
+            login = client.post('/login', data={'username': 'linelist', 'password': 'test-access-password'}, follow_redirects=False)
+            self.assertEqual(login.status_code, 303)
+            self.assertIn('HttpOnly', login.headers['set-cookie'])
+            self.assertEqual(client.get('/').status_code, 200)
+            with patch('routes_dashboard.summary', return_value={}):
+                response = client.post('/api/dashboard', data={'password': 'unused'},
+                                       headers={'Origin': 'http://server.example:5003'})
+                self.assertEqual(response.status_code, 200)
+                response = client.post('/api/dashboard',
+                                       headers={'Origin': 'https://untrusted.example'})
+                self.assertEqual(response.status_code, 403)
+
+    def test_server_database_connection_keeps_credentials_private(self):
+        url = 'postgresql://example:private-password@host.docker.internal:5432/ecews'
+        with patch.dict(os.environ, {'DATABASE_URL': url}):
+            client = TestClient(app)
+            page = client.get('/dashboard').text
+            self.assertIn('Using the database connection configured on the server', page)
+            self.assertNotIn('private-password', page)
+            self.assertIn('<input disabled', page)
+            with patch('routes_dashboard.summary', return_value={}) as summary:
+                response = client.post('/api/dashboard')
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(summary.call_args.args[0], {'conninfo': url})
+            with patch('routes_dashboard.summary', return_value={}) as summary:
+                client.post('/api/dashboard', data={'password': 'manual'})
+                self.assertEqual(summary.call_args.args[0]['password'], 'manual')
+
     def setUp(self):
         self.client = TestClient(app)
 

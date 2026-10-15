@@ -20,6 +20,32 @@ must exist; the account needs table/index/function creation permissions and
 SELECT, INSERT and UPDATE access. Add authentication and HTTPS before exposing
 this localhost application to other computers.
 
+## Docker
+
+```powershell
+Copy-Item .env.example .env
+# Set DATABASE_URL in .env, then:
+docker compose up --build -d
+```
+
+Open http://127.0.0.1:5003. For PostgreSQL running on the Windows host, enter
+`host.docker.internal` as the database host on the relevant page. PostgreSQL
+must accept connections from Docker. The existing database is not bundled.
+Run `docker compose down` to stop the app.
+
+Docker Compose reads the ignored `.env` file. Set `DATABASE_URL` to use a
+server-side connection for all database pages without entering credentials in
+the browser. Leave it empty to enter connection details manually. Credentials
+stay on the server when this setting is used. JWT_SECRET and RAG_SERVICE_URL
+are not used by this application.
+
+Set `APP_ACCESS_USERNAME`, `APP_ACCESS_PASSWORD` and a random
+`APP_SESSION_SECRET` in `.env` to enable the login page. Signed browser sessions
+expire after eight hours; use Sign out to clear the browser session. Five failed
+login attempts per client in one minute temporarily block further attempts.
+Configure `ALLOWED_HOSTS` and `PUBLIC_ORIGIN` for the server address and use HTTPS
+for internet access. Docker publishes port 5003 on all server interfaces.
+
 ## Pages
 
 | Page | Purpose |

@@ -4,6 +4,7 @@ __pycache__/
 !current_headers.json
 .env
 .env.*
+!.env.example
 *.xlsx
 *.xls
 *.csv

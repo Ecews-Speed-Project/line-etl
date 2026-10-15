@@ -1,0 +1,8 @@
+*
+!requirements.txt
+!*.py
+!*.html
+!current_headers.json
+!static/
+!static/**
+test_*.py

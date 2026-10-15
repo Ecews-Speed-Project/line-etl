@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sign in · ECEWS Linelist</title>
+  <link rel="stylesheet" href="/static/import.css">
+  <style>main{max-width:460px;margin:64px auto}button{width:100%}.error:empty{display:none}header{text-align:center}h1{font-size:28px}</style>
+</head>
+<body>
+  <header><small>ECEWS · Data tools</small><h1>Linelist Workspace</h1><p>Sign in to access your workspace.</p></header>
+  <main><section>
+    <h2>Welcome back</h2>
+    <form action="/login" method="post">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" required autofocus>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <p class="error" role="alert">{{error}}</p>
+      <button type="submit">Sign in</button>
+    </form>
+    <p class="hint">Your session expires after 8 hours.</p>
+  </section></main>
+</body>
+</html>
