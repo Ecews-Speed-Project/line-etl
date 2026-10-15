@@ -11,6 +11,13 @@ from contextlib import ExitStack
 from openpyxl import load_workbook
 
 
+def normalize_state(heading, value):
+    key = ''.join(c for c in heading.casefold() if c.isalnum())
+    if key in ('state', 'stateofresidence') and isinstance(value, str):
+        return value.strip().capitalize()
+    return value
+
+
 def convert(source, destination, sheet=None, header_row=1, report=None):
     source, destination = Path(source), Path(destination)
     if source.resolve() == destination.resolve():
@@ -75,6 +82,7 @@ def convert(source, destination, sheet=None, header_row=1, report=None):
                                            heading=headers[column], replacement=None, **issue))
                     if isinstance(value, (datetime, date, time)):
                         value = value.isoformat()
+                    value = normalize_state(headers[column], value)
                     values.append(value)
                 record = dict(source_row=row_number, data=dict(zip(headers, values)))
                 if count:

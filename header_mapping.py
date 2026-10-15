@@ -6,7 +6,7 @@ import re
 import zipfile
 
 from openpyxl import Workbook, load_workbook
-from excel_to_json import convert
+from excel_to_json import convert, normalize_state
 
 TARGET = json.loads((Path(__file__).parent / 'current_headers.json').read_text(encoding='utf-8'))
 SUGGESTIONS = {
@@ -88,7 +88,7 @@ def standardize(source, folder, mapping, sheet=None, header_row=1, allow_missing
     ws.append(TARGET)
     for record in doc['records']:
         old = record['data']
-        record['data'] = {t: old[mapping[t]] if mapping[t] else None for t in TARGET}
+        record['data'] = {t: normalize_state(t, old[mapping[t]]) if mapping[t] else None for t in TARGET}
         # Force strings to text to avoid interpreting values beginning '=' as formulas.
         from openpyxl.cell import WriteOnlyCell
         cells = []

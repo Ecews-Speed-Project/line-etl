@@ -7,11 +7,25 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 from openpyxl import Workbook
-from excel_to_json import convert
+from excel_to_json import convert, normalize_state
 from upload_json import upload
 
 
 class ConversionTests(unittest.TestCase):
+    def test_state_names_sentence_case(self):
+        self.assertEqual(normalize_state('State', 'AKWA IBOM'), 'Akwa ibom')
+        self.assertEqual(normalize_state('State_of_Residence', '  cRoSs RIVER  '), 'Cross river')
+        self.assertIsNone(normalize_state('State', None))
+        self.assertEqual(normalize_state('patient_id', 'ABC001'), 'ABC001')
+        with tempfile.TemporaryDirectory() as folder:
+            source, target = Path(folder)/'input.xlsx', Path(folder)/'output.json'
+            book=Workbook()
+            book.active.append(['State','State_of_Residence','patient_id'])
+            book.active.append(['AKWA IBOM','cRoSs RIVER','ABC001'])
+            book.save(source)
+            convert(source,target)
+            data=json.loads(target.read_text(encoding='utf-8'))['records'][0]['data']
+            self.assertEqual(data,dict(State='Akwa ibom',State_of_Residence='Cross river',patient_id='ABC001'))
     def test_types_blanks_and_validation(self):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / 'input.xlsx'
