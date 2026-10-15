@@ -6,7 +6,7 @@ if errorlevel 1 goto failure
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 goto failure
 echo Open http://127.0.0.1:8000 in your browser. Press Ctrl+C to stop.
-".venv\Scripts\python.exe" -m uvicorn app:app --host 127.0.0.1 --port 8000
+".venv\Scripts\python.exe" run_local.py
 exit /b
 :failure
 echo Setup failed. Check the error above.

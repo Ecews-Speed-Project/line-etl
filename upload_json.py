@@ -20,7 +20,9 @@ def parse_period(value):
         raise ValueError('Choose a valid reporting period date (YYYY-MM-DD)') from None
 
 
-def read_document(path):
+def read_document(path,progress=None):
+    notify=progress or (lambda event:None)
+    notify(dict(phase='reading_json'))
     def reject_constant(value):
         raise ValueError(f'Invalid JSON number: {value}')
     with Path(path).open(encoding='utf-8') as handle:
@@ -38,18 +40,23 @@ def read_document(path):
     if not isinstance(doc.get('records'), list):
         raise ValueError('Missing records')
     seen = set()
-    for record in doc['records']:
+    total=len(doc['records'])
+    notify(dict(phase='validating',processed=0,total=total))
+    for number,record in enumerate(doc['records'],1):
         row = record.get('source_row')
         if type(row) is not int or row < 1 or row in seen:
             raise ValueError('Invalid or duplicate source row')
         seen.add(row)
         if not isinstance(record.get('data'), dict) or set(record['data']) != set(headers):
             raise ValueError(f'Invalid data keys at row {row}')
+        if number%1000==0:notify(dict(phase='validating',processed=number,total=total))
+    notify(dict(phase='validated',processed=total,total=total))
     return doc
 
 
-def upload(path, schema='public', table='linelist_records', dry_run=False, connection=None, period=None):
-    doc = read_document(path)
+def upload(path, schema='public', table='linelist_records', dry_run=False, connection=None, period=None,progress=None,document=None):
+    notify=progress or (lambda event:None)
+    doc = document if document is not None else read_document(path,progress=notify)
     if dry_run:
         return len(doc['records'])
     period = parse_period(period)
@@ -69,6 +76,8 @@ def upload(path, schema='public', table='linelist_records', dry_run=False, conne
     config = connection if connection is not None else dict(
         dbname=os.environ.get('PGDATABASE', 'ecews'),
         user=os.environ.get('PGUSER', 'postgres'), password=password)
+    total=len(doc['records'])
+    notify(dict(phase='connecting',processed=0,total=total,inserted=0,skipped=0))
     with psycopg.connect(**config, connect_timeout=10) as conn:
         with conn.cursor() as cur:
             cur.execute(sql.SQL('''CREATE TABLE IF NOT EXISTS {} (
@@ -84,9 +93,16 @@ def upload(path, schema='public', table='linelist_records', dry_run=False, conne
             statement = sql.SQL('''INSERT INTO {} (source_sha256, source_file, sheet, source_row, data, period, source_snapshot_sha256)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (source_sha256, sheet, source_row) DO NOTHING''').format(target)
-            cur.executemany(statement, ((import_hash, doc['source_file'], doc['sheet'],
-                                        r['source_row'], Jsonb(r['data']), period, snapshot_hash) for r in doc['records']))
-            inserted = cur.rowcount
+            inserted=0
+            for start in range(0,total,500):
+                batch=doc['records'][start:start+500]
+                cur.executemany(statement, ((import_hash, doc['source_file'], doc['sheet'],
+                                            r['source_row'], Jsonb(r['data']), period, snapshot_hash) for r in batch))
+                inserted+=cur.rowcount
+                processed=start+len(batch)
+                notify(dict(phase='inserting',processed=processed,total=total,inserted=inserted,skipped=processed-inserted))
+            notify(dict(phase='committing',processed=total,total=total,inserted=inserted,skipped=total-inserted))
+    notify(dict(phase='completed',state='completed',processed=total,total=total,inserted=inserted,skipped=total-inserted))
     return inserted
 
 

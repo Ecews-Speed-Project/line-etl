@@ -14,6 +14,8 @@ from routes_mapping import router as mapping
 from routes_upload import router as upload
 from routes_flat import router as flat
 from routes_dashboard import router as dashboard
+from routes_jobs import router as jobs
+from routes_progress import router as progress
 
 app=FastAPI(title='Linelist Workspace')
 app.include_router(auth_router)
@@ -24,7 +26,7 @@ if public_hostname:
     allowed_hosts.append(public_hostname)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 app.mount('/static',StaticFiles(directory=ROOT/'static'),name='static')
-for router in (pages,excel,mapping,upload,flat,dashboard):
+for router in (pages,excel,mapping,upload,flat,dashboard,jobs,progress):
     app.include_router(router)
 
 @app.get('/healthz')

@@ -18,14 +18,26 @@ def normalize_state(heading, value):
     return value
 
 
-def convert(source, destination, sheet=None, header_row=1, report=None):
+def convert(source, destination, sheet=None, header_row=1, report=None, progress=None):
     source, destination = Path(source), Path(destination)
     if source.resolve() == destination.resolve():
         raise ValueError('Input and output must be different files')
     if header_row < 1:
         raise ValueError('Header row must be positive')
+    def notify(**event):
+        if progress:
+            progress(event)
+    hasher = hashlib.sha256()
+    size = source.stat().st_size
+    done = 0
+    notify(phase='hashing', bytes_done=0, bytes_total=size)
     with source.open('rb') as handle:
-        digest = hashlib.file_digest(handle, 'sha256').hexdigest()
+        while chunk := handle.read(1024 * 1024):
+            hasher.update(chunk)
+            done += len(chunk)
+            notify(phase='hashing', bytes_done=done, bytes_total=size)
+    digest = hasher.hexdigest()
+    notify(phase='opening_workbook')
     resources = ExitStack()
     try:
         workbook_file = resources.enter_context(source.open('rb'))
@@ -53,6 +65,9 @@ def convert(source, destination, sheet=None, header_row=1, report=None):
         count = 0
         issues = []
         formula_count = 0
+        total_rows = max(0, ws.max_row-header_row) if ws.max_row else None
+        scanned = 0
+        notify(phase='converting', processed=0, records=0, total_rows=total_rows)
         with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=destination.parent,
                                          delete=False, suffix='.tmp') as output:
             temp = output.name
@@ -60,6 +75,9 @@ def convert(source, destination, sheet=None, header_row=1, report=None):
                             sheet=ws.title, header_row=header_row, headers=headers)
             output.write(json.dumps(metadata, ensure_ascii=False)[:-1] + ', "records": [\n')
             for row_number, (cells, cached_cells) in enumerate(zip(rows, cached_rows), header_row + 1):
+                scanned = row_number-header_row
+                if scanned % 500 == 0:
+                    notify(phase='converting', processed=scanned, records=count, total_rows=total_rows)
                 if all(c.value is None for c in cells):
                     continue
                 if any(c.value is not None for c in cells[len(headers):]):
@@ -92,6 +110,7 @@ def convert(source, destination, sheet=None, header_row=1, report=None):
             summary = dict(formula_cells=formula_count, flagged_cells=len(issues), issues=issues,
                            note='Formula results use values saved by Excel, which may be stale. Excel errors and formulas without saved results become null; no formulas are recalculated.')
             output.write('\n], "conversion_report": ' + json.dumps(summary, ensure_ascii=False) + '}\n')
+        notify(phase='finalizing', processed=scanned, records=count, total_rows=total_rows)
         os.replace(temp, destination)
         temp = None
         if report is not None:

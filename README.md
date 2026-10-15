@@ -1,5 +1,46 @@
 # Linelist ETL
 
+## Database progress
+
+JSON uploads display file-transfer progress followed by JSON reading, validation,
+row insertion and commit status. Records insert in batches of 500 within a single
+transaction. The already-validated JSON document is reused rather than parsed
+multiple times. Flattening snapshots source-row keys in temporary PostgreSQL
+tables, identifies already copied rows and processes pending rows in batches of
+2,000. Progress shows rows processed, inserted and skipped. Intermediate counts
+are uncommitted; success appears only after the whole transaction commits.
+On failure, new rows and copied-row tracking roll back together.
+Database progress is polled from the server; keep the upload/flattening page
+open until completion. These operation counters are in memory and reset when the
+server restarts. Credentials and patient values are not stored in progress state.
+
+## Conversion progress and local files
+
+The Excel-to-JSON page first streams the raw workbook to a local job directory
+without multipart buffering, then starts a background conversion. The UI shows
+upload percentage, queued status, hashing, workbook opening, worksheet rows
+examined, JSON records written and finalization. Row totals use the worksheet's
+declared dimension; worksheets with no dimension show counts without a percentage.
+The conversion worker handles one workbook at a time to limit concurrent memory.
+Rows are read using openpyxl read-only mode and JSON records are written to disk
+incrementally. Excel metadata and shared strings still require memory.
+
+JSON downloads are streamed from the server file. The error preview loads a
+separate report instead of loading and re-uploading the complete JSON. Progress
+can be resumed by returning to the conversion page in the same browser tab.
+Jobs live in the ignored `.local_jobs/` folder, or LINELIST_JOB_DIR if configured.
+Use Remove local files after downloading to remove a completed or failed job.
+Server restarts preserve completed downloads; interrupted jobs must be uploaded
+again. The existing synchronous /api/convert endpoint is retained for API clients.
+
+## Local sign-in
+
+`start_app.bat` runs `run_local.py`, which loads the local `.env` file and enables
+administrator login. On the first local start, it creates a random password and
+session secret if none are configured. Open http://127.0.0.1:8000/login and use
+the APP_ACCESS_USERNAME and APP_ACCESS_PASSWORD values in `.env`. Edit those
+values and restart to change them. This file is excluded from Git.
+
 A local FastAPI app for standardizing Excel linelists, converting them to JSON,
 loading PostgreSQL, typed flattening, corrections and reporting.
 

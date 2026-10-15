@@ -8,6 +8,7 @@ from starlette.background import BackgroundTask
 from web_common import save_upload
 router = APIRouter()
 from upload_json import read_document, parse_period, upload
+from operation_progress import callback
 
 
 @router.post('/api/upload')
@@ -15,26 +16,30 @@ def upload_json(file: UploadFile = File(...), host: str = Form('localhost'),
                 port: int = Form(5432), database: str = Form('ecews'),
                 username: str = Form('postgres'), password: str = Form(''),
                 schema: str = Form('public'), table: str = Form('linelist_records'),
-                acknowledge_errors: bool = Form(False), period: str = Form(...)):
+                acknowledge_errors: bool = Form(False), period: str = Form(...),progress_id:str=Form('')):
     if not (file.filename or '').lower().endswith('.json'):
         raise HTTPException(400, 'Choose the JSON produced by step 1')
+    notify=lambda event:None
     try:
+        notify=callback(progress_id,'upload')
+        notify(dict(phase='saving_file'))
         selected_period = parse_period(period)
         with tempfile.TemporaryDirectory(prefix='linelist_') as folder:
             source = Path(folder) / 'upload.json'
             save_upload(file, source)
-            document = read_document(source)
+            document = read_document(source,progress=notify)
             if document.get('conversion_report', {}).get('issues') and not acknowledge_errors:
                 raise ValueError('Review the flagged cells and acknowledge them before uploading')
-            del document
-            total = upload(source, dry_run=True)
+            total = len(document['records'])
             inserted = upload(source, schema, table,
                               connection=database_connection(host, port, database, username, password),
-                              period=selected_period)
+                              period=selected_period,progress=notify,document=document)
             return dict(total=total, inserted=inserted, skipped=total-inserted, period=selected_period.isoformat())
     except ValueError as exc:
+        notify(dict(state='failed',phase='failed',error=str(exc),committed=0))
         raise HTTPException(400, str(exc)) from None
     except Exception:
+        notify(dict(state='failed',phase='failed',error='Upload failed; transaction rolled back.',committed=0))
         # Do not expose database credentials or patient values in browser errors.
         raise HTTPException(400, 'Upload failed. Check the JSON format, database connection, credentials and table permissions.') from None
     finally:

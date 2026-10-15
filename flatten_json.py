@@ -10,7 +10,9 @@ FLAT_HEADERS = HEADERS + ['period']
 FLAT_TYPES = dict(TYPES, period='date')
 
 
-def flatten(connection, schema='public', source_table='linelist_records'):
+def flatten(connection, schema='public', source_table='linelist_records',progress=None):
+    notify=progress or (lambda event:None)
+    notify(dict(phase='connecting'))
     if source_table in ('linelist_flat', 'linelist_flat_imports'):
         raise ValueError('Choose the JSONB source table, not a flat output table')
     target = sql.Identifier(schema, 'linelist_flat')
@@ -20,6 +22,7 @@ def flatten(connection, schema='public', source_table='linelist_records'):
     errors = sql.Identifier(schema, 'linelist_flat_type_errors')
     with psycopg.connect(**connection, connect_timeout=10) as conn:
         with conn.cursor() as cur:
+            notify(dict(phase='waiting_for_database'))
             cur.execute('SELECT pg_advisory_xact_lock(hashtext(%s))', (schema + '.linelist_flat',))
             cur.execute(sql.SQL('CREATE OR REPLACE FUNCTION {}(val text,kind text) RETURNS text LANGUAGE plpgsql IMMUTABLE AS {}').format(safe, sql.Literal(SAFE_CAST_BODY)))
             definitions = sql.SQL(', ').join(sql.SQL('{} {}').format(sql.Identifier(h), sql.SQL(TYPES[h])) for h in HEADERS)
@@ -36,6 +39,7 @@ def flatten(connection, schema='public', source_table='linelist_records'):
             existing = [(h,t) for h,t in all_columns if h != 'period']
             migrated = existing == [(h, 'text') for h in HEADERS]
             if migrated:
+                notify(dict(phase='migrating_types'))
                 backup = sql.Identifier(schema, 'linelist_flat_text_backup')
                 cur.execute(sql.SQL('CREATE TABLE IF NOT EXISTS {} AS TABLE {}').format(backup, target))
                 changes = sql.SQL(', ').join(sql.SQL('ALTER COLUMN {} TYPE {} USING {}({}, {})::{}').format(
@@ -57,14 +61,26 @@ def flatten(connection, schema='public', source_table='linelist_records'):
                 source_table text NOT NULL, source_sha256 text NOT NULL,
                 sheet text NOT NULL, source_row integer NOT NULL,
                 PRIMARY KEY(source_table, source_sha256, sheet, source_row))''').format(tracking))
+            notify(dict(phase='checking_copied_rows'))
+            cur.execute(sql.SQL('''CREATE TEMP TABLE linelist_operation_rows ON COMMIT DROP AS
+                SELECT s.source_sha256,s.sheet,s.source_row,(t.source_row IS NOT NULL) AS copied
+                FROM {} s LEFT JOIN {} t ON t.source_table=%s AND t.source_sha256=s.source_sha256
+                AND t.sheet=s.sheet AND t.source_row=s.source_row''').format(source,tracking),(source_table,))
+            cur.execute('SELECT count(*),count(*) FILTER(WHERE copied) FROM pg_temp.linelist_operation_rows')
+            source_total,skipped=cur.fetchone()
+            cur.execute('''CREATE TEMP TABLE linelist_pending_rows ON COMMIT DROP AS
+                SELECT source_sha256,sheet,source_row,row_number() OVER () AS sequence
+                FROM pg_temp.linelist_operation_rows WHERE NOT copied''')
+            cur.execute('CREATE INDEX ON pg_temp.linelist_pending_rows(sequence)')
+            pending_total=source_total-skipped
+            notify(dict(phase='flattening',processed=skipped,total=source_total,inserted=0,skipped=skipped))
             columns = sql.SQL(', ').join(sql.Identifier(h) for h in HEADERS)
             # The posted Markdown escapes one underscore; Excel's actual heading is used.
             values = sql.SQL(', ').join(sql.SQL('j.{}').format(sql.Identifier(h)) if TYPES[h]=='text' else
                 sql.SQL('{}(j.{}, {})::{}').format(safe, sql.Identifier(h), sql.Literal(TYPES[h]), sql.SQL(TYPES[h])) for h in HEADERS)
             query = sql.SQL('''WITH pending AS MATERIALIZED (
-                SELECT s.* FROM {} s WHERE NOT EXISTS (
-                    SELECT 1 FROM {} t WHERE t.source_table=%s AND
-                    t.source_sha256=s.source_sha256 AND t.sheet=s.sheet AND t.source_row=s.source_row)
+                SELECT s.* FROM {} s JOIN {} t ON t.source_sha256=s.source_sha256
+                    AND t.sheet=s.sheet AND t.source_row=s.source_row WHERE t.sequence>%s AND t.sequence<=%s
             ), inserted AS (
                 INSERT INTO {} ({}, period) SELECT {}, p.period FROM pending p
                 CROSS JOIN LATERAL jsonb_to_record(p.data) AS j({}) RETURNING 1
@@ -72,14 +88,16 @@ def flatten(connection, schema='public', source_table='linelist_records'):
                 INSERT INTO {} (source_table,source_sha256,sheet,source_row)
                 SELECT %s,source_sha256,sheet,source_row FROM pending RETURNING 1
             ) SELECT (SELECT count(*) FROM inserted), (SELECT count(*) FROM tracked)''').format(
-                source, tracking, target, columns, values, text_definitions, tracking)
+                source, sql.Identifier('pg_temp','linelist_pending_rows'), target, columns, values, text_definitions, tracking)
             typed = [h for h in HEADERS if TYPES[h] != 'text']
             names_array = sql.SQL('ARRAY[{}]').format(sql.SQL(',').join(sql.Literal(h) for h in typed))
             values_array = sql.SQL('ARRAY[{}]').format(sql.SQL(',').join(sql.SQL('j.{}').format(sql.Identifier(h)) for h in typed))
             kinds_array = sql.SQL('ARRAY[{}]').format(sql.SQL(',').join(sql.Literal(TYPES[h]) for h in typed))
             pending_filter = sql.SQL('TRUE') if migrated else sql.SQL('''NOT EXISTS (
                 SELECT 1 FROM {} t WHERE t.source_table=%s AND t.source_sha256=s.source_sha256
-                AND t.sheet=s.sheet AND t.source_row=s.source_row)''').format(tracking)
+                AND t.sheet=s.sheet AND t.source_row=s.source_row)
+                AND EXISTS (SELECT 1 FROM pg_temp.linelist_pending_rows b WHERE b.source_sha256=s.source_sha256
+                AND b.sheet=s.sheet AND b.source_row=s.source_row AND b.sequence>%s AND b.sequence<=%s)''').format(tracking)
             issue_query = sql.SQL('''INSERT INTO {} (source_table,source_sha256,sheet,source_row,heading,original_value,expected_type,reason)
                 SELECT %s,s.source_sha256,s.sheet,s.source_row,e.heading,e.value,e.kind,
                 'Value cannot be safely converted; stored as NULL'
@@ -88,17 +106,27 @@ def flatten(connection, schema='public', source_table='linelist_records'):
                 WHERE ({}) AND e.value IS NOT NULL AND btrim(e.value)<>'' AND {}(e.value,e.kind) IS NULL
                 ON CONFLICT DO NOTHING''').format(errors, source, text_definitions, names_array, values_array,
                                                  kinds_array, pending_filter, safe)
-            cur.execute(issue_query, (source_table,) if migrated else (source_table,source_table))
-            cur.execute(query, (source_table, source_table))
-            inserted, tracked = cur.fetchone()
-            if inserted != tracked:
-                raise ValueError('Flattening row reconciliation failed')
+            if migrated:
+                notify(dict(phase='checking_type_errors'))
+                cur.execute(issue_query,(source_table,))
+            inserted=0
+            for start in range(0,pending_total,2000):
+                end=min(start+2000,pending_total)
+                if not migrated:
+                    cur.execute(issue_query,(source_table,source_table,start,end))
+                cur.execute(query,(start,end,source_table))
+                copied,tracked=cur.fetchone()
+                if copied!=tracked:raise ValueError('Flattening row reconciliation failed')
+                inserted+=copied
+                notify(dict(phase='flattening',processed=skipped+end,total=source_total,inserted=inserted,skipped=skipped))
+            notify(dict(phase='committing',processed=source_total,total=source_total,inserted=inserted,skipped=skipped))
             cur.execute(sql.SQL('SELECT count(*) FROM {}').format(target))
             total = cur.fetchone()[0]
             from correct_types import ensure_audit
             ensure_audit(conn,schema)
             cur.execute(sql.SQL('SELECT count(*) FROM {} WHERE resolved_at IS NULL').format(errors))
             flagged = cur.fetchone()[0]
+    notify(dict(state='completed',phase='completed',processed=source_total,total=source_total,inserted=inserted,skipped=skipped))
     return dict(inserted=inserted, total=total, columns=FLAT_HEADERS, types=FLAT_TYPES,
                 migrated=migrated, flagged=flagged, table=schema + '.linelist_flat')
 

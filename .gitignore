@@ -13,3 +13,4 @@ __pycache__/
 work/
 outputs/
 .pytest_cache/
+.local_jobs/

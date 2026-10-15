@@ -6,3 +6,4 @@
 !static/
 !static/**
 test_*.py
+.local_jobs

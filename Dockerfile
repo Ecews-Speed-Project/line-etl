@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && useradd --create-home appuser
 COPY *.py *.html current_headers.json ./
 COPY static/ ./static/
+RUN mkdir -p /app/.local_jobs && chown appuser:appuser /app/.local_jobs
 USER appuser
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
