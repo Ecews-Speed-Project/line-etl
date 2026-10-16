@@ -16,6 +16,8 @@ from routes_flat import router as flat
 from routes_dashboard import router as dashboard
 from routes_jobs import router as jobs
 from routes_progress import router as progress
+from routes_treatment import router as treatment
+from routes_quarterly import router as quarterly
 
 app=FastAPI(title='Linelist Workspace')
 app.include_router(auth_router)
@@ -26,7 +28,7 @@ if public_hostname:
     allowed_hosts.append(public_hostname)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 app.mount('/static',StaticFiles(directory=ROOT/'static'),name='static')
-for router in (pages,excel,mapping,upload,flat,dashboard,jobs,progress):
+for router in (pages,excel,mapping,upload,flat,dashboard,jobs,progress,treatment,quarterly):
     app.include_router(router)
 
 @app.get('/healthz')
@@ -42,7 +44,7 @@ async def local_requests(request,call_next):
     access_password = os.environ.get('APP_ACCESS_PASSWORD')
     public_paths = {'/healthz', '/login', '/static/import.css'}
     if access_password and request.url.path not in public_paths and not authenticated(request):
-        if request.url.path.startswith('/api/'):
+        if request.url.path.startswith(('/api/','/quarterly/api/')):
             return JSONResponse({'detail': 'Your session has expired. Please sign in again.'}, status_code=401)
         return RedirectResponse('/login', status_code=303)
     allowed_origins = {None, 'http://127.0.0.1:8000', 'http://localhost:8000',

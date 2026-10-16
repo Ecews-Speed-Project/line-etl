@@ -4,6 +4,7 @@ from pathlib import Path
 from psycopg import sql
 import psycopg
 from column_types import TYPES, SAFE_CAST_BODY, PERSONAL_FIELDS
+from periods import period_type,parse_workflow_period,migrate_quarterly_periods
 
 HEADERS = json.loads((Path(__file__).parent / 'current_headers.json').read_text(encoding='utf-8'))
 FLAT_HEADERS = HEADERS + ['period']
@@ -15,6 +16,7 @@ def flatten(connection, schema='public', source_table='linelist_records',progres
     notify(dict(phase='connecting'))
     if source_table in ('linelist_flat', 'linelist_flat_imports'):
         raise ValueError('Choose the JSONB source table, not a flat output table')
+    flat_types=dict(TYPES,period=period_type(schema))
     target = sql.Identifier(schema, 'linelist_flat')
     tracking = sql.Identifier(schema, 'linelist_flat_imports')
     source = sql.Identifier(schema, source_table)
@@ -28,16 +30,17 @@ def flatten(connection, schema='public', source_table='linelist_records',progres
             definitions = sql.SQL(', ').join(sql.SQL('{} {}').format(sql.Identifier(h), sql.SQL(TYPES[h])) for h in HEADERS)
             text_definitions = sql.SQL(', ').join(sql.SQL('{} text').format(sql.Identifier(h)) for h in HEADERS)
             cur.execute(sql.SQL('CREATE TABLE IF NOT EXISTS {} ({})').format(target, definitions))
-            cur.execute(sql.SQL('ALTER TABLE {} ADD COLUMN IF NOT EXISTS period date').format(target))
+            cur.execute(sql.SQL('ALTER TABLE {} ADD COLUMN IF NOT EXISTS period {}').format(target,sql.SQL(period_type(schema))))
             additions=sql.SQL(', ').join(sql.SQL('ADD COLUMN IF NOT EXISTS {} text').format(sql.Identifier(h)) for h in PERSONAL_FIELDS)
             cur.execute(sql.SQL('ALTER TABLE {} {}').format(target,additions))
-            cur.execute(sql.SQL('ALTER TABLE {} ADD COLUMN IF NOT EXISTS period date, ADD COLUMN IF NOT EXISTS source_snapshot_sha256 text').format(source))
+            cur.execute(sql.SQL('ALTER TABLE {} ADD COLUMN IF NOT EXISTS period {}, ADD COLUMN IF NOT EXISTS source_snapshot_sha256 text').format(source,sql.SQL(period_type(schema))))
+            if schema=='quarterly':migrate_quarterly_periods(conn)
             cur.execute(sql.SQL('CREATE INDEX IF NOT EXISTS {} ON {} (period)').format(sql.Identifier('linelist_flat_period_idx'), target))
             cur.execute('''SELECT column_name, data_type FROM information_schema.columns
                            WHERE table_schema=%s AND table_name='linelist_flat' ORDER BY ordinal_position''', (schema,))
             all_columns = cur.fetchall()
-            if dict(all_columns).get('period') != 'date':
-                raise ValueError('The period column must use DATE')
+            if dict(all_columns).get('period') != period_type(schema):
+                raise ValueError('The period column has an incompatible type')
             existing = [(h,t) for h,t in all_columns if h != 'period']
             migrated = dict(existing) == {h:'text' for h in HEADERS}
             if migrated:
@@ -129,7 +132,7 @@ def flatten(connection, schema='public', source_table='linelist_records',progres
             cur.execute(sql.SQL('SELECT count(*) FROM {} WHERE resolved_at IS NULL').format(errors))
             flagged = cur.fetchone()[0]
     notify(dict(state='completed',phase='completed',processed=source_total,total=source_total,inserted=inserted,skipped=skipped))
-    return dict(inserted=inserted, total=total, columns=FLAT_HEADERS, types=FLAT_TYPES,
+    return dict(inserted=inserted, total=total, columns=FLAT_HEADERS, types=flat_types,
                 migrated=migrated, flagged=flagged, table=schema + '.linelist_flat')
 
 
@@ -140,7 +143,7 @@ def browse(connection, schema='public', offset=0, limit=25, period=None):
         with conn.cursor() as cur:
             target = sql.Identifier(schema, 'linelist_flat')
             from upload_json import parse_period
-            selected_period = parse_period(period) if period else None
+            selected_period = parse_workflow_period(period,schema) if period else None
             where = sql.SQL('WHERE period=%s') if selected_period else sql.SQL('')
             parameters = (selected_period,) if selected_period else ()
             cur.execute(sql.SQL('SELECT count(*) FROM {} {}').format(target, where), parameters)
@@ -148,7 +151,7 @@ def browse(connection, schema='public', offset=0, limit=25, period=None):
             cur.execute(sql.SQL('SELECT {} FROM {} {} ORDER BY ctid LIMIT %s OFFSET %s').format(
                 sql.SQL(', ').join(sql.Identifier(h) for h in FLAT_HEADERS), target, where), parameters + (limit, offset))
             rows = [[str(v) if v is not None else None for v in row] for row in cur.fetchall()]
-    return dict(columns=FLAT_HEADERS, types=FLAT_TYPES, rows=rows, total=total, offset=offset, limit=limit)
+    return dict(columns=FLAT_HEADERS, types=dict(TYPES,period=period_type(schema)), rows=rows, total=total, offset=offset, limit=limit)
 
 
 def type_errors(connection, schema='public', offset=0, limit=25):

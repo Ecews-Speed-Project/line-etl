@@ -1,3 +1,4 @@
+const uploadApiPrefix=document.body.dataset.apiPrefix||'';
 
 let downloadUrl;
 let reviewedUploadFile=null;
@@ -8,8 +9,8 @@ try{const body=JSON.parse(text);return typeof body.detail==='string'?body.detail
 
 async function reviewCells(file,container,offset=0){
 container.textContent='Loading flagged-cell review…';
-const data=new FormData();data.append('file',file,file instanceof File?file.name:'review.json');data.append('offset',offset);data.append('limit',100);
-const response=await fetch('/api/review-json',{method:'POST',body:data});
+const data=new FormData();data.append('file',file,file instanceof File?file.name:'review.json');data.append('offset',offset);data.append('limit',100);if(uploadApiPrefix)data.set('schema','quarterly');
+const response=await fetch(uploadApiPrefix+'/api/review-json',{method:'POST',body:data});
 if(!response.ok)throw new Error(await responseError(response));
 const result=await response.json();container.replaceChildren();
 container.append(element('h3',result.total.toLocaleString()+' flagged cells'));
@@ -42,6 +43,6 @@ refresh();run.addEventListener('click',async()=>{let mappingProgress=null,mappin
 for(const id of ['convert','upload']) document.getElementById(id)?.addEventListener('submit',async event=>{
 event.preventDefault();let databaseProgress=null,operationSucceeded=false;const form=event.target,button=form.querySelector('button'),status=document.getElementById(id+'-status');button.disabled=true;status.className='status';status.textContent=id==='convert'?'Converting workbook…':'Uploading records…';
 if(id==='convert')document.getElementById('download').hidden=true;
-try{if(id==='upload'&&reviewedUploadFile!==form.elements.file.files[0])throw new Error('Wait for the JSON flagged-cell review to complete before uploading.');if(id==='upload'&&!document.getElementById('error-ack').hidden&&!form.elements.acknowledge_errors.checked)throw new Error('Review the flagged cells and tick the acknowledgment before uploading.');const data=new FormData(form);if(id==='upload'){databaseProgress=await DatabaseProgress.start('upload',status);data.append('progress_id',databaseProgress.id);}const response=databaseProgress?await databaseProgress.sendMultipart('/api/'+id,data):await fetch('/api/'+id,{method:'POST',body:data});if(!response.ok)throw new Error(await responseError(response));
+try{if(id==='upload'&&reviewedUploadFile!==form.elements.file.files[0])throw new Error('Wait for the JSON flagged-cell review to complete before uploading.');if(id==='upload'&&!document.getElementById('error-ack').hidden&&!form.elements.acknowledge_errors.checked)throw new Error('Review the flagged cells and tick the acknowledgment before uploading.');const data=new FormData(form);if(id==='upload'){databaseProgress=await DatabaseProgress.start('upload',status);data.append('progress_id',databaseProgress.id);}const response=databaseProgress?await databaseProgress.sendMultipart(uploadApiPrefix+'/api/'+id,data):await fetch((id==='upload'?uploadApiPrefix:'')+'/api/'+id,{method:'POST',body:data});if(!response.ok)throw new Error(await responseError(response));
 if(id==='convert'){const blob=await response.blob();if(downloadUrl)URL.revokeObjectURL(downloadUrl);downloadUrl=URL.createObjectURL(blob);const link=document.getElementById('download');link.href=downloadUrl;link.download='linelist.json';link.hidden=false;status.textContent=Number(response.headers.get('X-Row-Count')).toLocaleString()+' rows converted. '+Number(response.headers.get('X-Flagged-Cells')).toLocaleString()+' flagged cells replaced with empty values. Details are in the JSON conversion_report. Download the JSON for step 2.';await reviewCells(blob,document.getElementById('converted-errors'));}else{const result=await response.json();status.textContent=result.inserted.toLocaleString()+' rows inserted · '+result.skipped.toLocaleString()+' already imported for period '+result.period+'.';form.elements.password.value='';}operationSucceeded=true;status.classList.add('ok');
 }catch(error){status.textContent=error.message;status.classList.add('error');}finally{if(databaseProgress)await databaseProgress.finish(operationSucceeded);button.disabled=false;}});

@@ -55,14 +55,15 @@ def read_document(path,progress=None):
     return doc
 
 
-def upload(path, schema='public', table='linelist_records', dry_run=False, connection=None, period=None,progress=None,document=None):
+def upload(path, schema='public', table='linelist_records', dry_run=False, connection=None, period=None,progress=None,document=None,create_schema=False):
     notify=progress or (lambda event:None)
     doc = document if document is not None else read_document(path,progress=notify)
     if dry_run:
         return len(doc['records'])
-    period = parse_period(period)
+    from periods import parse_workflow_period,period_text,period_type,migrate_quarterly_periods
+    period = parse_workflow_period(period,schema)
     snapshot_hash = doc['source_sha256']
-    import_hash = hashlib.sha256(('linelist-period-v1:' + snapshot_hash + ':' + period.isoformat()).encode()).hexdigest()
+    import_hash = hashlib.sha256(('linelist-period-v1:' + snapshot_hash + ':' + period_text(period)).encode()).hexdigest()
     import psycopg
     from psycopg import sql
     from psycopg.types.json import Jsonb
@@ -81,6 +82,9 @@ def upload(path, schema='public', table='linelist_records', dry_run=False, conne
     notify(dict(phase='connecting',processed=0,total=total,inserted=0,skipped=0))
     with psycopg.connect(**config, connect_timeout=10) as conn:
         with conn.cursor() as cur:
+            if create_schema:
+                cur.execute(sql.SQL('CREATE SCHEMA IF NOT EXISTS {}').format(sql.Identifier(schema)))
+            if schema=='quarterly':migrate_quarterly_periods(conn)
             cur.execute(sql.SQL('''CREATE TABLE IF NOT EXISTS {} (
                 source_sha256 text NOT NULL,
                 source_file text NOT NULL,
@@ -90,7 +94,7 @@ def upload(path, schema='public', table='linelist_records', dry_run=False, conne
                 imported_at timestamptz NOT NULL DEFAULT now(),
                 PRIMARY KEY (source_sha256, sheet, source_row)
             )''').format(target))
-            cur.execute(sql.SQL('ALTER TABLE {} ADD COLUMN IF NOT EXISTS period date, ADD COLUMN IF NOT EXISTS source_snapshot_sha256 text').format(target))
+            cur.execute(sql.SQL('ALTER TABLE {} ADD COLUMN IF NOT EXISTS period {}, ADD COLUMN IF NOT EXISTS source_snapshot_sha256 text').format(target,sql.SQL(period_type(schema))))
             statement = sql.SQL('''INSERT INTO {} (source_sha256, source_file, sheet, source_row, data, period, source_snapshot_sha256)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (source_sha256, sheet, source_row) DO NOTHING''').format(target)

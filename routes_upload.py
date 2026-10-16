@@ -23,7 +23,8 @@ def upload_json(file: UploadFile = File(...), host: str = Form('localhost'),
     try:
         notify=callback(progress_id,'upload')
         notify(dict(phase='saving_file'))
-        selected_period = parse_period(period)
+        from periods import parse_workflow_period,period_text
+        selected_period = parse_workflow_period(period,schema)
         with tempfile.TemporaryDirectory(prefix='linelist_') as folder:
             source = Path(folder) / ('upload.json.gz' if (file.filename or '').lower().endswith('.gz') else 'upload.json')
             save_upload(file, source)
@@ -33,8 +34,8 @@ def upload_json(file: UploadFile = File(...), host: str = Form('localhost'),
             total = len(document['records'])
             inserted = upload(source, schema, table,
                               connection=database_connection(host, port, database, username, password),
-                              period=selected_period,progress=notify,document=document)
-            return dict(total=total, inserted=inserted, skipped=total-inserted, period=selected_period.isoformat())
+                              period=selected_period,progress=notify,document=document,create_schema=(schema=='quarterly'))
+            return dict(total=total, inserted=inserted, skipped=total-inserted, period=period_text(selected_period))
     except ValueError as exc:
         notify(dict(state='failed',phase='failed',error=str(exc),committed=0))
         raise HTTPException(400, str(exc)) from None

@@ -1,5 +1,24 @@
 # Linelist ETL
 
+## Treatment and viral load reporting
+
+Load the dashboard, select one uploaded linelist and choose a reporting end date
+(default 2026-09-19). Calculate report displays TxCurr, Eligible, Sample collected,
+Result, VL suppression, Undetectable, LLV, Unsuppressed and four rates, with
+paediatric, adult and unknown-age breakdowns. Download Word report produces a
+two-page editable correspondence and indicator summary using the same selection.
+
+TxCurr uses Active in CurrentARTStatus. All other counts require Active and
+DaysOfARVRefill >=180. Sample and result dates must fall within the inclusive
+calendar-year window ending on the selected date. A valid Result also requires a
+finite numeric CurrentViralLoad >=0. Suppression is <1000, undetectable <50, LLV
+is >=50 and <1000, and unsuppressed is Result minus suppression. Coverage divides
+Result by Eligible; suppression, undetectable and LLV rates divide by Result.
+Zero denominators are N/A. Status is taken from the selected snapshot rather than
+reconstructed at the report date. Counts assume one client per source row.
+Tx New, continuity, net gains and quarterly IIT metrics are explicitly not
+calculated because their definitions/comparison data have not been supplied.
+
 ## Faster current-heading conversion
 
 Header standardization now writes mapped JSON and the original-data copy while
@@ -199,3 +218,26 @@ Batch scripts are included for both steps.
 
 Tests use generated workbook fixtures and mocked database API calls. Patient
 files, generated JSON, spreadsheets, logs and credentials are excluded from Git.
+
+Treatment report exports include a landscape state cascade, an ECEWS total calculated from all records (rates use combined denominators), and a treatment summary. Fiscal years run October to September. Undefined treatment measures display N/A until their rules and comparison data are configured.
+
+The paediatric cascade groups Current_Age into under 1, 1-4, 5-9, 10-14 and 15-19 years by state, with state subtotals and an ECEWS total. Sample collection rate is Sample Collected / Eligible. All subtotal percentages use combined counts; missing/invalid ages are excluded. The Word download includes the paediatric cascade and treatment summary on a landscape page.
+
+The brief now uses the retained user-supplied templates/brief_treatment.docx as its layout authority. Exports patch numerical/date text slots and replace the four table images while preserving styles, numbering, page geometry, header and unrelated package parts. The dashboard renders the same narrative spans and table models. Pillow is required for table image generation; install all requirements on the server. Undefined treatment measures remain N/A.
+
+
+### Quarterly linelist workflow
+
+Open `/quarterly/upload` to review and upload converted JSON or `.json.gz`, then `/quarterly/flat` to apply types and browse quarterly data. `/quarterly/errors` saves corrections to quarterly source and flat rows. The shared header mapping and Excel conversion modules work for either workflow.
+
+Quarterly routes use the fixed PostgreSQL schema `quarterly`, with `linelist_records`, `linelist_flat`, copied-row tracking, type-error audit, backup and safe-cast function kept separately from the weekly `public` schema. The schema is created transactionally on the first successful quarterly upload; the database user needs permission to create it (or an administrator can pre-create it). Upload the same file/date once in each workflow without their duplicate or copied-row flags interfering. A fiscal quarter label such as `FY26Q1` or `FY26Q4` is required and saved as TEXT in both quarterly tables. Labels are trimmed and normalized to uppercase. Weekly periods remain DATE.
+
+The APIs mirror the weekly endpoints under `/quarterly/api/`: `review-json`, `upload`, `flat/build`, `flat/browse`, `flat/errors` and `correct-type`. They require `schema=quarterly` and the standard `linelist_records` source table. Authentication and progress displays are shared. Weekly pages and existing records remain unchanged. The current dashboard continues to show the weekly data by default.
+
+Open `/quarterly/dashboard` for quarterly upload totals by period, Active counts, flattening status, the treatment/VL report and Word export. All requests use `/quarterly/api/dashboard` and `/quarterly/api/treatment-report`, with the quarterly schema enforced. Selecting a snapshot resolves its fiscal quarter label to a reporting end date: FY26Q1 ends 2025-12-31, Q2 ends 2026-03-31, Q3 ends 2026-06-30 and Q4 ends 2026-09-30. The label itself stays unchanged in storage and reports. No quarterly uploads produces an empty dashboard, and quarterly Word files use a `quarterly_` prefix. The weekly dashboard remains at `/dashboard`.
+
+For older installations, quarterly writes migrate existing DATE period columns to TEXT transactionally, preserving their existing ISO date values, row identities and copied-row tracking. No existing weekly column is migrated.
+
+On the weekly dashboard, select a weekly snapshot and an optional Quarterly comparison linelist. The comparison selector lists quarterly uploaded snapshots by fiscal label, filename and sheet. The selected quarterly snapshot supplies state and paediatric TxCurr counts for the quarter comparison column in both preview and Word export; weekly TxCurr stays in the current column. Without a selected quarterly snapshot the comparison stays N/A. Missing states in the selected comparison are N/A. The report date continues to control the viral-load reporting window.
+
+With both weekly and quarterly snapshots selected, NetNew is weekly Active TxCurr minus quarter Active TxCurr. CoT/retention is weekly TxCurr divided by quarter TxCurr times 100, as selected by the user. State, paediatric-state, paediatric total and ECEWS values are calculated independently from their counts; total rates are not averages of state rates. This is a snapshot ratio, not matched-client cohort retention; rates may exceed 100%. Missing comparisons and zero denominator rates show N/A. Tables, narrative, Word export and API comparison_metrics use the same calculations.

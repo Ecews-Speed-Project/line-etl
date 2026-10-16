@@ -3,6 +3,7 @@ import psycopg
 from psycopg import sql
 from psycopg.types.json import Jsonb
 from column_types import TYPES
+from periods import period_type
 from flatten_json import HEADERS
 
 
@@ -44,8 +45,8 @@ def correct(connection, schema, source_table, source_sha256, sheet, source_row, 
         rows = conn.execute(sql.SQL('''WITH expected AS MATERIALIZED (
             SELECT {} FROM jsonb_to_record(%s) AS j({})
         ) SELECT f.ctid FROM {} f CROSS JOIN expected e
-          WHERE f.period IS NOT DISTINCT FROM %s::date AND {} LIMIT 2 FOR UPDATE OF f''').format(
-            expected_values,text_defs,flat,predicates), (Jsonb(original),period)).fetchall()
+          WHERE f.period IS NOT DISTINCT FROM %s::{} AND {} LIMIT 2 FOR UPDATE OF f''').format(
+            expected_values,text_defs,flat,sql.SQL(period_type(schema)),predicates), (Jsonb(original),period)).fetchall()
         if len(rows)!=1:
             raise ValueError('Cannot identify exactly one matching flat row. No changes saved; check duplicate snapshots or changed data.')
         conn.execute(sql.SQL('UPDATE {} SET {}=%s::{} WHERE ctid=%s::tid').format(flat,sql.Identifier(heading),sql.SQL(TYPES[heading])), (converted,rows[0][0]))

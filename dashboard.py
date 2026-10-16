@@ -1,13 +1,15 @@
 """Read-only upload and flattening summary by source snapshot and period."""
 import psycopg
 from psycopg import sql
-from upload_json import parse_period
+from periods import parse_workflow_period,period_text,quarter_end
 
 
 def summary(connection,schema='public',source_table='linelist_records',period=None):
-    selected=parse_period(period) if period else None
+    selected=parse_workflow_period(period,schema) if period else None
     with psycopg.connect(**connection,connect_timeout=10) as conn:
         source=sql.Identifier(schema,source_table)
+        if schema=='quarterly' and not conn.execute('SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=%s AND table_name=%s)',(schema,source_table)).fetchone()[0]:
+            return dict(linelists=[],periods=[],totals=dict(linelists=0,rows=0,active=0,flattened=0,pending=0),active_definition='No quarterly uploads yet. Upload a quarterly linelist to get started.')
         exists=conn.execute('SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=%s AND table_name=%s)',(schema,'linelist_flat_imports')).fetchone()[0]
         join=sql.SQL('LEFT JOIN {} t ON t.source_table=%s AND t.source_sha256=s.source_sha256 AND t.sheet=s.sheet AND t.source_row=s.source_row').format(sql.Identifier(schema,'linelist_flat_imports')) if exists else sql.SQL('')
         copied=sql.SQL('count(t.source_row)') if exists else sql.SQL('0::bigint')
@@ -21,7 +23,7 @@ def summary(connection,schema='public',source_table='linelist_records',period=No
     periods={}
     for fingerprint,file,sheet,period,rows,flattened,active,uploaded in rows:
         state='Flattened' if flattened==rows else 'Partly flattened' if flattened else 'Not flattened'
-        snapshot=dict(id=fingerprint,file=file,sheet=sheet,period=period.isoformat() if period else None,
+        snapshot=dict(id=fingerprint,file=file,sheet=sheet,period=period_text(period),period_end=quarter_end(period) if schema=='quarterly' else period_text(period),
                       rows=rows,flattened=flattened,pending=rows-flattened,active=active,status=state,
                       last_upload=uploaded.isoformat())
         snapshots.append(snapshot)
