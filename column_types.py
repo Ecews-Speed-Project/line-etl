@@ -1,5 +1,6 @@
 """Explicit PostgreSQL types for current linelist headings."""
 from header_mapping import TARGET
+PERSONAL_FIELDS=('Surname','Firstname','Educationallevel','MaritalStatus','JobStatus','PhoneNo','Address')
 
 INTEGERS = set('Ageatstartofart Ageinmonths DaysOnART DaysOfARVRefill Current_Age CurrentAge_Months INHDaysOfARVRefill Days_To_Schedule Recapture_count'.split())
 DECIMALS = set('CurrentViralLoad LastWeight LastHeight BMI FirstCD4'.split())

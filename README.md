@@ -1,5 +1,16 @@
 # Linelist ETL
 
+## Faster current-heading conversion
+
+Header standardization now writes mapped JSON and the original-data copy while
+reading worksheet rows, without loading the complete intermediate JSON back into
+memory. The header-mapping page defaults to JSON-only output; select “Also generate
+an Excel workbook” if you need an Excel copy. JSON, JSON.gz and mapping/error
+reports remain included. API clients retain include_excel=true as the default.
+Progress covers upload, workbook reading, mapped rows, optional Excel creation,
+compression and packaging. Already-compressed Excel/gzip files are stored directly
+in the ZIP, while JSON uses fast compression.
+
 ## Compressed JSON transfers
 
 Use Download JSON.gz after Excel conversion to transfer a smaller file. The
@@ -109,7 +120,7 @@ for internet access. Docker publishes port 5003 on all server interfaces.
 | Page | Purpose |
 | --- | --- |
 | `/` | Module navigation |
-| `/headers` | Map old Excel headings to the current 121-column schema |
+| `/headers` | Map old Excel headings to the current 128-column schema |
 | `/convert` | Convert Excel to JSON and review flagged cells |
 | `/upload` | Review JSON, choose a reporting date and upload |
 | `/flat` | Flatten records, browse typed columns and filter by period |
@@ -138,7 +149,7 @@ Uploaded temporary files are removed after processing.
 ## Database
 
 - `linelist_records`: JSONB rows, source metadata and reporting `period` DATE.
-- `linelist_flat`: 121 current columns plus `period`, using DATE, INTEGER,
+- `linelist_flat`: 128 current columns plus `period`, using DATE, INTEGER,
   NUMERIC and TEXT types defined in `column_types.py`.
 - `linelist_flat_imports`: copied-row tracking for repeat flattening.
 - `linelist_flat_type_errors`: original invalid values and correction audit.

@@ -1,9 +1,9 @@
-"""Materialize JSONB records into the 121-column linelist_flat table."""
+"""Materialize JSONB records into the 128-column linelist_flat table."""
 import json
 from pathlib import Path
 from psycopg import sql
 import psycopg
-from column_types import TYPES, SAFE_CAST_BODY
+from column_types import TYPES, SAFE_CAST_BODY, PERSONAL_FIELDS
 
 HEADERS = json.loads((Path(__file__).parent / 'current_headers.json').read_text(encoding='utf-8'))
 FLAT_HEADERS = HEADERS + ['period']
@@ -29,6 +29,8 @@ def flatten(connection, schema='public', source_table='linelist_records',progres
             text_definitions = sql.SQL(', ').join(sql.SQL('{} text').format(sql.Identifier(h)) for h in HEADERS)
             cur.execute(sql.SQL('CREATE TABLE IF NOT EXISTS {} ({})').format(target, definitions))
             cur.execute(sql.SQL('ALTER TABLE {} ADD COLUMN IF NOT EXISTS period date').format(target))
+            additions=sql.SQL(', ').join(sql.SQL('ADD COLUMN IF NOT EXISTS {} text').format(sql.Identifier(h)) for h in PERSONAL_FIELDS)
+            cur.execute(sql.SQL('ALTER TABLE {} {}').format(target,additions))
             cur.execute(sql.SQL('ALTER TABLE {} ADD COLUMN IF NOT EXISTS period date, ADD COLUMN IF NOT EXISTS source_snapshot_sha256 text').format(source))
             cur.execute(sql.SQL('CREATE INDEX IF NOT EXISTS {} ON {} (period)').format(sql.Identifier('linelist_flat_period_idx'), target))
             cur.execute('''SELECT column_name, data_type FROM information_schema.columns
@@ -37,7 +39,7 @@ def flatten(connection, schema='public', source_table='linelist_records',progres
             if dict(all_columns).get('period') != 'date':
                 raise ValueError('The period column must use DATE')
             existing = [(h,t) for h,t in all_columns if h != 'period']
-            migrated = existing == [(h, 'text') for h in HEADERS]
+            migrated = dict(existing) == {h:'text' for h in HEADERS}
             if migrated:
                 notify(dict(phase='migrating_types'))
                 backup = sql.Identifier(schema, 'linelist_flat_text_backup')
@@ -46,11 +48,11 @@ def flatten(connection, schema='public', source_table='linelist_records',progres
                     sql.Identifier(h), sql.SQL(TYPES[h]), safe, sql.Identifier(h), sql.Literal(TYPES[h]), sql.SQL(TYPES[h]))
                     for h in HEADERS if TYPES[h] != 'text')
                 cur.execute(sql.SQL('ALTER TABLE {} {}').format(target, changes))
-            elif existing == [(h, 'timestamp without time zone' if h in ('Date_Generated', 'PBSDateCreated', 'RecapturedDate') else TYPES[h]) for h in HEADERS]:
+            elif dict(existing) == {h:'timestamp without time zone' if h in ('Date_Generated', 'PBSDateCreated', 'RecapturedDate') else TYPES[h] for h in HEADERS}:
                 changes = sql.SQL(', ').join(sql.SQL('ALTER COLUMN {} TYPE date USING {}::date').format(
                     sql.Identifier(h), sql.Identifier(h)) for h in ('Date_Generated', 'PBSDateCreated', 'RecapturedDate'))
                 cur.execute(sql.SQL('ALTER TABLE {} {}').format(target, changes))
-            elif existing != [(h, TYPES[h]) for h in HEADERS]:
+            elif dict(existing) != TYPES:
                 raise ValueError('Existing linelist_flat has a different schema; it was not modified')
             cur.execute(sql.SQL('''CREATE TABLE IF NOT EXISTS {} (
                 source_table text NOT NULL, source_sha256 text NOT NULL, sheet text NOT NULL,

@@ -8,7 +8,7 @@ OPERATIONS={}
 
 
 def create(kind):
-    if kind not in ('upload','flatten'):raise ValueError('Invalid operation kind')
+    if kind not in ('upload','flatten','standardize'):raise ValueError('Invalid operation kind')
     with LOCK:
         for key in list(OPERATIONS):
             if time.time()-OPERATIONS[key]['created_at']>86400:OPERATIONS.pop(key)

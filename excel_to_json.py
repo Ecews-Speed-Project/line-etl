@@ -18,7 +18,8 @@ def normalize_state(heading, value):
     return value
 
 
-def convert(source, destination, sheet=None, header_row=1, report=None, progress=None):
+def convert(source, destination, sheet=None, header_row=1, report=None, progress=None,
+            metadata_transform=None,record_transform=None,original_destination=None,final_metadata=None):
     source, destination = Path(source), Path(destination)
     if source.resolve() == destination.resolve():
         raise ValueError('Input and output must be different files')
@@ -61,6 +62,7 @@ def convert(source, destination, sheet=None, header_row=1, report=None, progress
             headers.pop()
         if not headers or any(not h for h in headers) or len(set(headers)) != len(headers):
             raise ValueError('Headers must be nonempty and unique; select the correct --header-row')
+        state_columns={i for i,h in enumerate(headers) if ''.join(c for c in h.casefold() if c.isalnum()) in ('state','stateofresidence')}
         destination.parent.mkdir(parents=True, exist_ok=True)
         count = 0
         issues = []
@@ -73,6 +75,11 @@ def convert(source, destination, sheet=None, header_row=1, report=None, progress
             temp = output.name
             metadata = dict(format_version=1, source_file=source.name, source_sha256=digest,
                             sheet=ws.title, header_row=header_row, headers=headers)
+            original_output=None
+            if original_destination:
+                original_output=resources.enter_context(Path(original_destination).open('w',encoding='utf-8'))
+                original_output.write(json.dumps(metadata,ensure_ascii=False)[:-1]+', "records": [\n')
+            if metadata_transform:metadata=metadata_transform(metadata)
             output.write(json.dumps(metadata, ensure_ascii=False)[:-1] + ', "records": [\n')
             for row_number, (cells, cached_cells) in enumerate(zip(rows, cached_rows), header_row + 1):
                 scanned = row_number-header_row
@@ -100,16 +107,24 @@ def convert(source, destination, sheet=None, header_row=1, report=None, progress
                                            heading=headers[column], replacement=None, **issue))
                     if isinstance(value, (datetime, date, time)):
                         value = value.isoformat()
-                    value = normalize_state(headers[column], value)
+                    if column in state_columns:value = normalize_state(headers[column], value)
                     values.append(value)
                 record = dict(source_row=row_number, data=dict(zip(headers, values)))
+                if original_output:
+                    if count:original_output.write(',\n')
+                    original_output.write(json.dumps(record,ensure_ascii=False,allow_nan=False))
+                if record_transform:record=record_transform(record)
                 if count:
                     output.write(',\n')
                 output.write(json.dumps(record, ensure_ascii=False, allow_nan=False))
                 count += 1
             summary = dict(formula_cells=formula_count, flagged_cells=len(issues), issues=issues,
                            note='Formula results use values saved by Excel, which may be stale. Excel errors and formulas without saved results become null; no formulas are recalculated.')
-            output.write('\n], "conversion_report": ' + json.dumps(summary, ensure_ascii=False) + '}\n')
+            ending='\n], "conversion_report": '+json.dumps(summary,ensure_ascii=False)
+            if original_output:original_output.write(ending+'}\n')
+            if final_metadata:
+                for key,value in final_metadata(summary,count).items():ending+=', '+json.dumps(key)+': '+json.dumps(value,ensure_ascii=False)
+            output.write(ending+'}\n')
         notify(phase='finalizing', processed=scanned, records=count, total_rows=total_rows)
         os.replace(temp, destination)
         temp = None
