@@ -56,7 +56,7 @@ class ActivityCounts:
             if row.get(field) is not None and str(row[field]).strip() and dates[key] is None:self.quality['invalid_'+key+'_dates']+=1
         inside=lambda key:dates[key] is not None and self.start<=dates[key]<=self.end
         hits=[]
-        if inside('art') and normalized(row.get('TI'))!='no':hits.append('txnew')
+        if inside('art') and normalized(row.get('TI'))!='yes':hits.append('txnew')
         if inside('transfer'):hits.append('transferred_in')
         if inside('outcome'):
             if status=='death':hits.append('death')
@@ -71,7 +71,7 @@ class ActivityCounts:
         return dict(start_date=self.start.isoformat(),end_date=self.end.isoformat(),groups=self.groups,states=self.states,paediatric_states=self.paediatric_states,quality=self.quality,
             definitions=[
              f'Activity window: {self.start.isoformat()} to {self.end.isoformat()}, inclusive. These counts do not require Active status or 180 refill days.',
-             'TxNew: ARTStartDate in the activity window, excluding TI equal to NO (case and surrounding spaces ignored). Blank TI is included.',
+             'TxNew: ARTStartDate in the activity window, excluding TI equal to YES (case and surrounding spaces ignored). Blank TI is included.',
              'Transferred in: Date_Transfered_In in the activity window, regardless of ART status or TI.',
              'Death: CurrentARTStatus = Death and Outcomes_Date in the activity window.',
              'Stopped: CurrentARTStatus = Discontinued care and Outcomes_Date in the activity window.',

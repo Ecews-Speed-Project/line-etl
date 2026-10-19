@@ -15,6 +15,8 @@ class ActivityTests(unittest.TestCase):
         counts.add(dict(CurrentARTStatus='Active',ARTStartDate='2026-10-01',Date_Transfered_In='bad',State='Delta'),None,'ambiguous')
         result=counts.result();self.assertEqual(result['groups']['all'],dict(txnew=2,transferred_in=1,death=1,rtt=1,stopped=1,transferred_out=1))
         self.assertEqual(result['groups']['paediatrics']['stopped'],1)
+        self.assertEqual(result['groups']['paediatrics']['txnew'],0)
+        self.assertEqual(result['groups']['adults']['txnew'],2)
         self.assertEqual(result['quality']['rtt_unmatched_active'],1);self.assertEqual(result['quality']['rtt_ambiguous_active'],1)
         for key in ['art','transfer','outcome']:self.assertEqual(result['quality']['invalid_'+key+'_dates'],1)
     def test_no_previous_snapshot_and_bad_window(self):
@@ -53,9 +55,15 @@ class ActivityTests(unittest.TestCase):
         from report_template import table_models,brief_view
         r=aggregate([('Active','180',None,None,None,'10','Delta')],'2026-09-19')
         activity=ActivityCounts('2026-07-01','2026-09-30',True)
-        activity.add(dict(CurrentARTStatus='Active',Current_Age=10,State='Delta',ARTStartDate='2026-08-01',TI='YES',Date_Transfered_In='2026-09-01'),'IIT','matched')
+        activity.add(dict(CurrentARTStatus='Active',Current_Age=10,State='Delta',ARTStartDate='2026-08-01',TI='NO',Date_Transfered_In='2026-09-01'),'IIT','matched')
         r['activity']=activity.result();tables=table_models(r)
         self.assertEqual(tables[1]['rows'][0][3:6],['1','1','1'])
         self.assertEqual(tables[3]['rows'][0][3:6],['1','1','1'])
         p={p['index']:''.join(t['text'] for t in p['runs']) for p in brief_view(r)['paragraphs']}
         self.assertIn('is 1.',p[6]);self.assertIn('at 1 ',p[13])
+
+    def test_txnew_excludes_yes_with_case_and_spaces(self):
+        counts=ActivityCounts('2026-07-01','2026-09-30')
+        for ti in ['YES',' Yes ','yes','NO',' no ',None,'']:
+            counts.add(dict(ARTStartDate='2026-08-01',TI=ti))
+        self.assertEqual(counts.result()['groups']['all']['txnew'],4)

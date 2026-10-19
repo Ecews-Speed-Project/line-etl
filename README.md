@@ -245,7 +245,7 @@ With both weekly and quarterly snapshots selected, NetNew is weekly Active TxCur
 
 ### Treatment activity indicators
 
-The report has a separate inclusive activity window, defaulting to 2026-07-01 through 2026-09-30. TxNew counts ARTStartDate in that window, explicitly excluding TI=NO; blank TI is included as requested. Transferred in counts Date_Transfered_In in the window. Death, Stopped and Transferred out require Outcomes_Date in the window and CurrentARTStatus equal to Death, Discontinued care and Transferred out respectively. These indicators do not apply the VL Active/refill eligibility filters.
+The report has a separate inclusive activity window, defaulting to 2026-07-01 through 2026-09-30. TxNew counts ARTStartDate in that window, explicitly excluding TI=YES; blank TI is included as requested. Transferred in counts Date_Transfered_In in the window. Death, Stopped and Transferred out require Outcomes_Date in the window and CurrentARTStatus equal to Death, Discontinued care and Transferred out respectively. These indicators do not apply the VL Active/refill eligibility filters.
 
 RTT compares the selected quarterly snapshot with current Active records: previous status must be neither Active nor blank. It has no event-date condition. Matching uses facility (Datim_Code, otherwise FacilityName) and PepID, with patient_id as fallback; identifiers are trimmed/case-insensitive. Duplicate or conflicting identities are excluded, and unmatched/ambiguous Active rows appear in report quality counts. A missing comparison gives N/A. Matching indexes are stored in a temporary local SQLite file and removed after calculation; PostgreSQL reads are streamed. Current age and state determine breakdowns.
 

@@ -85,7 +85,7 @@ def build(report):
             source=report['comparison']['source'];text.text+=' Quarter comparison: '+source['period']+' | '+source['file']+' | '+source['sheet']+'.'
             text.text+=' NetNew = weekly TxCurr - quarter TxCurr. CoT/retention = weekly TxCurr / quarter TxCurr x 100 (snapshot ratio, not client-cohort retention; zero baseline is N/A).'
         if report.get('activity'):
-            a=report['activity'];text.text+=' Activity window: '+a['start_date']+' to '+a['end_date']+'. TxNew excludes TI=NO. Stopped uses Discontinued care; transferred out uses Transferred out. RTT excludes blank, unmatched and ambiguous previous statuses.'
+            a=report['activity'];text.text+=' Activity window: '+a['start_date']+' to '+a['end_date']+'. TxNew excludes TI=YES. Stopped uses Discontinued care; transferred out uses Transferred out. RTT excludes blank, unmatched and ambiguous previous statuses.'
         for path,xml in [('word/document.xml',root),('word/_rels/document.xml.rels',relationships),('[Content_Types].xml',types)]:changes[path]=etree.tostring(xml,xml_declaration=True,encoding='UTF-8',standalone=True)
         out=BytesIO()
         with ZipFile(out,'w',ZIP_DEFLATED) as result:
