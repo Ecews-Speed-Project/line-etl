@@ -3,6 +3,7 @@ from datetime import date
 from pathlib import Path
 from zipfile import ZipFile
 from comparison_metrics import compare_group,rate_text
+from activity_indicators import activity_group
 from lxml import etree
 
 TEMPLATE=Path(__file__).parent/'templates'/'brief_treatment.docx'
@@ -31,18 +32,27 @@ def template_xml(report):
     body=root.find('w:body',NS);a=report['groups']['all'];c=report['groups']['paediatrics'];end=date.fromisoformat(report['end_date'])
     fy=end.year+(end.month>=10);q=((end.month+2)%12)//3+1
     overall_comparison=compare_group(report);paediatric_comparison=compare_group(report,paediatric=True)
+    overall_activity=activity_group(report);child_activity=activity_group(report,paediatric=True)
     suffix='TH' if 10<end.day%100<14 else {1:'ST',2:'ND',3:'RD'}.get(end.day%10,'TH')
     replacements={0:[('@19','@'+str(end.day)),('TH',suffix),('September',end.strftime('%B')),('2026',str(end.year))],
-      6:[('76','N/A')],7:[('3192',formatted(c['txcurr']))],
+      6:[('76',formatted(child_activity['txnew']))],7:[('3192',formatted(c['txcurr']))],
       8:[('FY26-Q4',f'FY{str(fy)[-2:]}-Q{q}'),('97.8%',rate_text(paediatric_comparison['retention_rate'])),('-45',formatted(paediatric_comparison['netnew']))],
       9:[('FY26Q4',f'FY{str(fy)[-2:]}Q{q}'),('September',end.strftime('%B')),('73','N/A'),('2.2','N/A')],
       10:[('94%',formatted(c['coverage'],True)),('90%',formatted(c['suppression_rate'],True))],
-      13:[('1085','N/A'),('FY26 Q4',f'FY{str(fy)[-2:]} Q{q}')],
+      13:[('1085',formatted(overall_activity['txnew'])),('FY26 Q4',f'FY{str(fy)[-2:]} Q{q}')],
       15:[('99%',rate_text(overall_comparison['retention_rate'])),('a positive','a reported'),('-22',formatted(overall_comparison['netnew']))],
       16:[('FY26',f'FY{str(fy)[-2:]}'),('1,386','N/A'),('FY26Q4',f'FY{str(fy)[-2:]}Q{q}'),('1.52','N/A')],
       21:[('83,225',formatted(a['result'])),('81,119',formatted(a['vl_suppression'])),('95%',formatted(a['coverage'],True)),('98%',formatted(a['suppression_rate'],True))],
       22:[('90%',formatted(a['undetectable_rate'],True)),('75,105',formatted(a['undetectable']))],
       23:[('2,026',formatted(a['unsuppressed'])),('6,094',formatted(a['llv']))]}
+    activity_end=date.fromisoformat(report.get('activity',{}).get('end_date',report['end_date']))
+    activity_fy=activity_end.year+(activity_end.month>=10);activity_q=((activity_end.month+2)%12)//3+1
+    if report.get('activity'):
+        replacements[6]=[('so far this quarter','for the selected activity period'),('76',formatted(child_activity['txnew']))]
+        replacements[8][0]=('FY26-Q4',f'FY{str(activity_fy)[-2:]}-Q{activity_q}')
+        replacements[9][0]=('FY26Q4',f'FY{str(activity_fy)[-2:]}Q{activity_q}')
+        replacements[9][1]=('September',activity_end.strftime('%B'))
+        replacements[13][1]=('FY26 Q4',f'FY{str(activity_fy)[-2:]} Q{activity_q}')
     # Replace year/quarter phrases before standalone fiscal-year tokens.
     replacements[16]=[(f'FY26Q4',f'FY{str(fy)[-2:]}Q{q}'),('In summary for FY26',f'In summary for FY{str(fy)[-2:]}'),('1,386','N/A'),('1.52','N/A')]
     for index,pairs in replacements.items():
@@ -79,7 +89,8 @@ def table_models(report):
         rows=[]
         for n,g in [*states,('ECEWS',total)]:
             metrics=compare_group(report,n,paediatric=kind=='paediatric-treatment')
-            rows.append([n,baseline(n),formatted(g['txcurr'])]+['N/A']*5+[rate_text(metrics['retention_rate']),formatted(metrics['netnew'])]+['N/A']*3)
+            events=activity_group(report,n,paediatric=kind=='paediatric-treatment')
+            rows.append([n,baseline(n),formatted(g['txcurr']),formatted(events['txnew']),formatted(events['transferred_in']),formatted(events['rtt']),'N/A','N/A',rate_text(metrics['retention_rate']),formatted(metrics['netnew']),formatted(events['death']),formatted(events['stopped']),formatted(events['transferred_out'])])
         return {'kind':kind,'headers':treatment_headers,'rows':rows}
     pediatric=report.get('paediatric_states',{})
     pk=['txcurr','eligible','sample_collected','sample_collection_rate','result','vl_suppression','undetectable','llv','coverage','suppression_rate','llv_rate','undetectable_rate']

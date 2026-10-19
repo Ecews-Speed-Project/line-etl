@@ -100,7 +100,7 @@ def aggregate(rows,end_date,progress=None,total=None):
                  'Counts are rows within one selected snapshot. Status is taken from that snapshot; this does not reconstruct status at an earlier reporting date.'])
 
 
-def calculate(connection,schema,source_table,snapshot_id,sheet,end_date,progress=None):
+def calculate(connection,schema,source_table,snapshot_id,sheet,end_date,progress=None,activity_start_date=None,activity_end_date=None,comparison_snapshot_id='',comparison_sheet=''):
     window(end_date)
     if not re.fullmatch(r'[0-9a-f]{64}',snapshot_id):raise ValueError('Select a valid uploaded linelist')
     notify=progress or (lambda event:None)
@@ -119,6 +119,10 @@ def calculate(connection,schema,source_table,snapshot_id,sheet,end_date,progress
             cursor.execute(sql.SQL('''SELECT {} FROM {} s CROSS JOIN LATERAL jsonb_to_record(s.data) AS j({})
                 WHERE s.source_sha256=%s AND s.sheet=%s''').format(columns,source,definitions),(snapshot_id,sheet))
             report=aggregate(cursor,end_date,progress=notify,total=total)
+        if activity_start_date is not None:
+            from activity_indicators import calculate_activity
+            report['activity']=calculate_activity(conn,schema,source_table,snapshot_id,sheet,activity_start_date,activity_end_date,comparison_snapshot_id,comparison_sheet,notify)
+            report['definitions'].extend(report['activity']['definitions'])
     report['source']=dict(file=filename,period=period_text(period),sheet=sheet,snapshot_id=snapshot_id,rows=total)
     notify(dict(phase='completed',state='completed',processed=total,total=total))
     return report
