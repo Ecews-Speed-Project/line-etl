@@ -89,7 +89,7 @@ class ActivityCounts:
              'Transferred out: CurrentARTStatus = Transferred out and Outcomes_Date in the activity window.',
              'RTT: matched previous status is neither Active nor blank, and current status is Active. No event-date filter is applied to RTT. With no selected quarterly comparison, RTT is N/A.',
              'RTT matches facility + PepID, with facility + patient_id fallback. Facility uses Datim_Code, or FacilityName when code is missing. Identifiers are trimmed and case-insensitive. Duplicate or conflicting matches are excluded and counted as ambiguous; unmatched current Active rows are reported separately.',
-             f'IIT: Pharmacy_LastPickupdate + DaysOfARVRefill + 28 days falls from {self.iit_start.isoformat()} through {self.iit_end.isoformat()}, inclusive, and CurrentARTStatus is LTFU or lost to follow up. Rows missing a valid pickup date or nonnegative whole-number refill value are excluded and flagged. IIT rate remains N/A until its denominator is supplied.',
+             f'IIT: Pharmacy_LastPickupdate + DaysOfARVRefill + 28 days falls from {self.iit_start.isoformat()} through {self.iit_end.isoformat()}, inclusive, and CurrentARTStatus is LTFU or lost to follow up. Rows missing a valid pickup date or nonnegative whole-number refill value are excluded and flagged. IIT rate = IIT / (selected-quarter TxCurr + TxNew) x 100, shown to one decimal place. With no quarterly comparison or a zero/missing denominator, the rate is N/A.',
              'Age/state breakdowns use the current linelist. Counts are source rows, consistent with the existing report.'])
 
 def activity_group(report,name='ECEWS',paediatric=False):

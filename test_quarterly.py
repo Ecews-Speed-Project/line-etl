@@ -123,3 +123,27 @@ class QuarterlyTests(unittest.TestCase):
         self.assertIsNone(compare_group({'groups':{'all':{'txcurr':10}}})['netnew'])
         missing={'groups':{'all':{'txcurr':10}},'states':{'Delta':{'txcurr':10}},'comparison':{'states':{},'groups':{'all':{'txcurr':10}}}}
         self.assertIsNone(compare_group(missing,'Delta')['retention_rate'])
+
+    def test_iit_rate_formula_and_decimal_display(self):
+        from comparison_metrics import compare_group,rate_text
+        from treatment_report import aggregate
+        from activity_indicators import ActivityCounts
+        from report_template import table_models,brief_view
+        r=aggregate([('Active',180,None,None,None,15,'Delta')],'2026-10-17')
+        baseline=aggregate([('Active',180,None,None,None,15,'Delta')]*90,'2026-09-30')
+        baseline['source']={'period':'FY26Q4'};r['comparison']=baseline
+        counts=ActivityCounts('2026-07-01','2026-09-30')
+        counts.groups['all'].update(txnew=10,iit=7);counts.groups['paediatrics'].update(txnew=10,iit=7)
+        counts.states['Delta']=dict(counts.groups['all']);counts.paediatric_states['Delta']=dict(counts.groups['paediatrics'])
+        r['activity']=counts.result()
+        self.assertEqual(compare_group(r)['iit_rate'],7)
+        self.assertEqual(rate_text(compare_group(r)['iit_rate']),'7.0%')
+        self.assertEqual(table_models(r)[1]['rows'][0][7],'7.0%')
+        self.assertEqual(table_models(r)[3]['rows'][-1][7],'7.0%')
+        paragraphs={p['index']:''.join(run['text'] for run in p['runs']) for p in brief_view(r)['paragraphs']}
+        self.assertIn('IIT rate is 7.0%',paragraphs[16])
+        r['comparison']['groups']['all']['txcurr']=0
+        self.assertEqual(compare_group(r)['iit_rate'],70)
+        r['activity']['groups']['all']['txnew']=0
+        self.assertIsNone(compare_group(r)['iit_rate'])
+        r.pop('comparison');self.assertIsNone(compare_group(r)['iit_rate'])

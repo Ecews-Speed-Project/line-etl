@@ -32,6 +32,7 @@ def treatment(host:str=Form('localhost'),port:int=Form(5432),database:str=Form('
             from comparison_metrics import compare_group,DEFINITION
             report['comparison_metrics']={
                 'all':compare_group(report),'paediatrics':compare_group(report,paediatric=True),
+                'adults':compare_group(report,cohort='adults'),'unknown_age':compare_group(report,cohort='unknown_age'),
                 'states':{name:compare_group(report,name) for name in report['states']},
                 'paediatric_states':{name:compare_group(report,name,paediatric=True) for name in report.get('paediatric_states',{})}}
             report['definitions'].append(DEFINITION)

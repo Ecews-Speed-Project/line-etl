@@ -16,7 +16,7 @@ is >=50 and <1000, and unsuppressed is Result minus suppression. Coverage divide
 Result by Eligible; suppression, undetectable and LLV rates divide by Result.
 Zero denominators are N/A. Status is taken from the selected snapshot rather than
 reconstructed at the report date. Counts assume one client per source row.
-The dashboard also computes treatment activity indicators and IIT using their separate windows. NetNew and the selected CoT snapshot ratio use the quarterly comparison. IIT rate remains N/A until a denominator is supplied.
+The dashboard also computes treatment activity indicators and IIT using their separate windows. NetNew and the selected CoT snapshot ratio use the quarterly comparison. IIT rate is IIT / (previous-quarter TxCurr + TxNew) x 100, displayed to one decimal place.
 
 ## Faster current-heading conversion
 
@@ -248,6 +248,8 @@ The report has a separate inclusive activity window, defaulting to 2026-07-01 th
 
 RTT compares the selected quarterly snapshot with current Active records: previous status must be neither Active nor blank. It has no event-date condition. Matching uses facility (Datim_Code, otherwise FacilityName) and PepID, with patient_id as fallback; identifiers are trimmed/case-insensitive. Duplicate or conflicting identities are excluded, and unmatched/ambiguous Active rows appear in report quality counts. A missing comparison gives N/A. Matching indexes are stored in a temporary local SQLite file and removed after calculation; PostgreSQL reads are streamed. Current age and state determine breakdowns.
 
-All six indicators appear in the dashboard activity summary and the state/paediatric treatment tables in the preview and Word export. Invalid date counts are shown in the report notes. IIT is computed from pickup + refill + 28 days using its separate date window. IIT rate still requires a denominator. NetNew and the user-selected CoT formula are unchanged.
+All six indicators appear in the dashboard activity summary and the state/paediatric treatment tables in the preview and Word export. Invalid date counts are shown in the report notes. IIT is computed from pickup + refill + 28 days using its separate date window. IIT rate uses IIT / (selected-quarter TxCurr + TxNew) x 100. NetNew and the user-selected CoT formula are unchanged.
 
-IIT counts CurrentARTStatus equal to LTFU or lost to follow up (case-insensitive, whitespace normalized) when Pharmacy_LastPickupdate + DaysOfARVRefill + 28 days is within the inclusive IIT window. The default is 2026-10-01 through 2026-10-17. Refill days must be finite, nonnegative whole numbers; missing/invalid inputs or overflowing dates are excluded and counted in quality notes. The IIT window is independent of the activity and VL windows. IIT is included in state/paediatric tables, narrative and dashboard totals; IIT rate remains N/A until its denominator is defined.
+IIT counts CurrentARTStatus equal to LTFU or lost to follow up (case-insensitive, whitespace normalized) when Pharmacy_LastPickupdate + DaysOfARVRefill + 28 days is within the inclusive IIT window. The default is 2026-10-01 through 2026-10-17. Refill days must be finite, nonnegative whole numbers; missing/invalid inputs or overflowing dates are excluded and counted in quality notes. The IIT window is independent of the activity and VL windows. IIT is included in state/paediatric tables, narrative and dashboard totals; IIT rate uses IIT / (selected-quarter TxCurr + TxNew) x 100, with one decimal place.
+
+IIT rate uses the selected quarterly baseline and current TxNew activity count for each state/cohort. Aggregate rates use summed IIT, quarter TxCurr and TxNew counts rather than averaging state rates. Missing comparisons or nonpositive denominators show N/A.
