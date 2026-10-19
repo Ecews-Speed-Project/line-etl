@@ -6,9 +6,9 @@ Load the dashboard, select one uploaded linelist and choose a reporting end date
 (default 2026-09-19). Calculate report displays TxCurr, Eligible, Sample collected,
 Result, VL suppression, Undetectable, LLV, Unsuppressed and four rates, with
 paediatric, adult and unknown-age breakdowns. Download Word report produces a
-two-page editable correspondence and indicator summary using the same selection.
+two-page brief based on the retained Word template using the same selection.
 
-TxCurr uses Active in CurrentARTStatus. All other counts require Active and
+TxCurr uses Active in CurrentARTStatus. The VL eligibility counts require Active and
 DaysOfARVRefill >=180. Sample and result dates must fall within the inclusive
 calendar-year window ending on the selected date. A valid Result also requires a
 finite numeric CurrentViralLoad >=0. Suppression is <1000, undetectable <50, LLV
@@ -16,8 +16,7 @@ is >=50 and <1000, and unsuppressed is Result minus suppression. Coverage divide
 Result by Eligible; suppression, undetectable and LLV rates divide by Result.
 Zero denominators are N/A. Status is taken from the selected snapshot rather than
 reconstructed at the report date. Counts assume one client per source row.
-Tx New, continuity, net gains and quarterly IIT metrics are explicitly not
-calculated because their definitions/comparison data have not been supplied.
+The dashboard also computes treatment activity indicators and IIT using their separate windows. NetNew and the selected CoT snapshot ratio use the quarterly comparison. IIT rate remains N/A until a denominator is supplied.
 
 ## Faster current-heading conversion
 
@@ -249,4 +248,6 @@ The report has a separate inclusive activity window, defaulting to 2026-07-01 th
 
 RTT compares the selected quarterly snapshot with current Active records: previous status must be neither Active nor blank. It has no event-date condition. Matching uses facility (Datim_Code, otherwise FacilityName) and PepID, with patient_id as fallback; identifiers are trimmed/case-insensitive. Duplicate or conflicting identities are excluded, and unmatched/ambiguous Active rows appear in report quality counts. A missing comparison gives N/A. Matching indexes are stored in a temporary local SQLite file and removed after calculation; PostgreSQL reads are streamed. Current age and state determine breakdowns.
 
-All six indicators appear in the dashboard activity summary and the state/paediatric treatment tables in the preview and Word export. Invalid date counts are shown in the report notes. IIT and IIT rate still require definitions. NetNew and the user-selected CoT formula are unchanged.
+All six indicators appear in the dashboard activity summary and the state/paediatric treatment tables in the preview and Word export. Invalid date counts are shown in the report notes. IIT is computed from pickup + refill + 28 days using its separate date window. IIT rate still requires a denominator. NetNew and the user-selected CoT formula are unchanged.
+
+IIT counts CurrentARTStatus equal to LTFU or lost to follow up (case-insensitive, whitespace normalized) when Pharmacy_LastPickupdate + DaysOfARVRefill + 28 days is within the inclusive IIT window. The default is 2026-10-01 through 2026-10-17. Refill days must be finite, nonnegative whole numbers; missing/invalid inputs or overflowing dates are excluded and counted in quality notes. The IIT window is independent of the activity and VL windows. IIT is included in state/paediatric tables, narrative and dashboard totals; IIT rate remains N/A until its denominator is defined.

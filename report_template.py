@@ -62,6 +62,13 @@ def template_xml(report):
     p=body[14];nodes=p.findall('.//w:t',NS)
     for node in nodes:node.text=''
     nodes[0].text=f"Tx Curr as at last week is {formatted(a['txcurr'])}. Prior-week comparison is N/A."
+    if report.get('activity'):
+        activity=report['activity']
+        for index,events in [(9,child_activity),(16,overall_activity)]:
+            nodes=body[index].findall('.//w:t',NS)
+            for node in nodes:node.text=''
+            noun='client' if events['iit']==1 else 'clients'
+            nodes[0].text=f"IIT from {activity['iit_start_date']} to {activity['iit_end_date']} is {formatted(events['iit'])} {noun}. IIT rate is N/A."
     if report.get('workflow')=='quarterly':
         for paragraph in body.findall('w:p',NS):
             for node in paragraph.findall('.//w:t',NS):
@@ -90,7 +97,7 @@ def table_models(report):
         for n,g in [*states,('ECEWS',total)]:
             metrics=compare_group(report,n,paediatric=kind=='paediatric-treatment')
             events=activity_group(report,n,paediatric=kind=='paediatric-treatment')
-            rows.append([n,baseline(n),formatted(g['txcurr']),formatted(events['txnew']),formatted(events['transferred_in']),formatted(events['rtt']),'N/A','N/A',rate_text(metrics['retention_rate']),formatted(metrics['netnew']),formatted(events['death']),formatted(events['stopped']),formatted(events['transferred_out'])])
+            rows.append([n,baseline(n),formatted(g['txcurr']),formatted(events['txnew']),formatted(events['transferred_in']),formatted(events['rtt']),formatted(events['iit']),'N/A',rate_text(metrics['retention_rate']),formatted(metrics['netnew']),formatted(events['death']),formatted(events['stopped']),formatted(events['transferred_out'])])
         return {'kind':kind,'headers':treatment_headers,'rows':rows}
     pediatric=report.get('paediatric_states',{})
     pk=['txcurr','eligible','sample_collected','sample_collection_rate','result','vl_suppression','undetectable','llv','coverage','suppression_rate','llv_rate','undetectable_rate']

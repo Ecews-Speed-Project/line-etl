@@ -100,7 +100,7 @@ def aggregate(rows,end_date,progress=None,total=None):
                  'Counts are rows within one selected snapshot. Status is taken from that snapshot; this does not reconstruct status at an earlier reporting date.'])
 
 
-def calculate(connection,schema,source_table,snapshot_id,sheet,end_date,progress=None,activity_start_date=None,activity_end_date=None,comparison_snapshot_id='',comparison_sheet=''):
+def calculate(connection,schema,source_table,snapshot_id,sheet,end_date,progress=None,activity_start_date=None,activity_end_date=None,comparison_snapshot_id='',comparison_sheet='',iit_start_date='2026-10-01',iit_end_date='2026-10-17'):
     window(end_date)
     if not re.fullmatch(r'[0-9a-f]{64}',snapshot_id):raise ValueError('Select a valid uploaded linelist')
     notify=progress or (lambda event:None)
@@ -121,7 +121,7 @@ def calculate(connection,schema,source_table,snapshot_id,sheet,end_date,progress
             report=aggregate(cursor,end_date,progress=notify,total=total)
         if activity_start_date is not None:
             from activity_indicators import calculate_activity
-            report['activity']=calculate_activity(conn,schema,source_table,snapshot_id,sheet,activity_start_date,activity_end_date,comparison_snapshot_id,comparison_sheet,notify)
+            report['activity']=calculate_activity(conn,schema,source_table,snapshot_id,sheet,activity_start_date,activity_end_date,comparison_snapshot_id,comparison_sheet,notify,iit_start_date,iit_end_date)
             report['definitions'].extend(report['activity']['definitions'])
     report['source']=dict(file=filename,period=period_text(period),sheet=sheet,snapshot_id=snapshot_id,rows=total)
     notify(dict(phase='completed',state='completed',processed=total,total=total))

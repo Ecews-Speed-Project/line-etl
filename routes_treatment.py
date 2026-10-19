@@ -11,21 +11,22 @@ def treatment(host:str=Form('localhost'),port:int=Form(5432),database:str=Form('
               source_table:str=Form('linelist_records'),snapshot_id:str=Form(...),sheet:str=Form(...),
               end_date:str=Form('2026-09-19'),progress_id:str=Form(''),word:bool=Form(False),
               comparison_snapshot_id:str=Form(''),comparison_sheet:str=Form(''),
-              activity_start_date:str=Form('2026-07-01'),activity_end_date:str=Form('2026-09-30')):
+              activity_start_date:str=Form('2026-07-01'),activity_end_date:str=Form('2026-09-30'),
+              iit_start_date:str=Form('2026-10-01'),iit_end_date:str=Form('2026-10-17')):
     notify=lambda event:None
     try:
         notify=callback(progress_id,'report')
         if bool(comparison_snapshot_id)!=bool(comparison_sheet):raise ValueError('Choose a complete quarterly comparison snapshot.')
         if comparison_snapshot_id and schema=='quarterly':raise ValueError('Quarter comparison is selected from the weekly dashboard.')
         from activity_indicators import ActivityCounts
-        ActivityCounts(activity_start_date,activity_end_date)
+        ActivityCounts(activity_start_date,activity_end_date,iit_start=iit_start_date,iit_end=iit_end_date)
         config=database_connection(host,port,database,username,password)
         comparison=None
         if comparison_snapshot_id:
             comparison=calculate(config,'quarterly','linelist_records',comparison_snapshot_id,comparison_sheet,end_date)
             from periods import quarterly_period
             quarterly_period(comparison['source']['period'])
-        report=calculate(config,schema,source_table,snapshot_id,sheet,end_date,progress=notify,activity_start_date=activity_start_date,activity_end_date=activity_end_date,comparison_snapshot_id=comparison_snapshot_id,comparison_sheet=comparison_sheet)
+        report=calculate(config,schema,source_table,snapshot_id,sheet,end_date,progress=notify,activity_start_date=activity_start_date,activity_end_date=activity_end_date,comparison_snapshot_id=comparison_snapshot_id,comparison_sheet=comparison_sheet,iit_start_date=iit_start_date,iit_end_date=iit_end_date)
         if comparison:
             report['comparison']=comparison
             from comparison_metrics import compare_group,DEFINITION

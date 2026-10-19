@@ -2,9 +2,10 @@
 from pathlib import Path
 import sqlite3
 import tempfile
+from datetime import timedelta
 
-KEYS=['txnew','transferred_in','death','rtt','stopped','transferred_out']
-EVENT_FIELDS=['CurrentARTStatus','ARTStartDate','TI','Date_Transfered_In','Outcomes_Date','Current_Age','State','Datim_Code','FacilityName','PepID','patient_id']
+KEYS=['txnew','transferred_in','death','rtt','stopped','transferred_out','iit']
+EVENT_FIELDS=['CurrentARTStatus','ARTStartDate','TI','Date_Transfered_In','Outcomes_Date','Current_Age','State','Datim_Code','FacilityName','PepID','patient_id','Pharmacy_LastPickupdate','DaysOfARVRefill']
 
 def normalized(value):return ' '.join(str(value or '').strip().casefold().split())
 
@@ -34,14 +35,16 @@ class MatchIndex:
     def close(self):self.db.close()
 
 class ActivityCounts:
-    def __init__(self,start,end,comparison=False):
+    def __init__(self,start,end,comparison=False,iit_start='2026-10-01',iit_end='2026-10-17'):
         from upload_json import parse_period
         self.start=parse_period(start);self.end=parse_period(end)
         if self.start>self.end:raise ValueError('Activity start date must be on or before its end date.')
+        self.iit_start=parse_period(iit_start);self.iit_end=parse_period(iit_end)
+        if self.iit_start>self.iit_end:raise ValueError('IIT start date must be on or before its end date.')
         self.comparison=comparison
         self.groups={name:self.empty() for name in ['all','paediatrics','adults','unknown_age']}
         self.states={};self.paediatric_states={}
-        self.quality=dict(rtt_unmatched_active=0,rtt_ambiguous_active=0,invalid_art_dates=0,invalid_transfer_dates=0,invalid_outcome_dates=0)
+        self.quality=dict(rtt_unmatched_active=0,rtt_ambiguous_active=0,invalid_art_dates=0,invalid_transfer_dates=0,invalid_outcome_dates=0,iit_missing_or_invalid_inputs=0)
     def empty(self):return {key:(None if key=='rtt' and not self.comparison else 0) for key in KEYS}
     def add(self,row,previous_status=None,match='unavailable'):
         from treatment_report import calendar_date,number
@@ -62,13 +65,21 @@ class ActivityCounts:
             if status=='death':hits.append('death')
             if status=='discontinued care':hits.append('stopped')
             if status=='transferred out':hits.append('transferred_out')
+        if status in ['ltfu','lost to follow up']:
+            pickup=calendar_date(row.get('Pharmacy_LastPickupdate'));refill=number(row.get('DaysOfARVRefill'))
+            iit_date=None
+            if pickup is not None and refill is not None and 0<=refill<=3652059 and refill==refill.to_integral_value():
+                try:iit_date=pickup+timedelta(days=int(refill)+28)
+                except (OverflowError,ValueError):pass
+            if iit_date is None:self.quality['iit_missing_or_invalid_inputs']+=1
+            elif self.iit_start<=iit_date<=self.iit_end:hits.append('iit')
         if self.comparison and status=='active':
             if match in ['ambiguous','unmatched']:self.quality['rtt_'+match+'_active']+=1
             if match=='matched' and normalized(previous_status) not in ['','active']:hits.append('rtt')
         for group in selected:
             for key in hits:group[key]+=1
     def result(self):
-        return dict(start_date=self.start.isoformat(),end_date=self.end.isoformat(),groups=self.groups,states=self.states,paediatric_states=self.paediatric_states,quality=self.quality,
+        return dict(start_date=self.start.isoformat(),end_date=self.end.isoformat(),iit_start_date=self.iit_start.isoformat(),iit_end_date=self.iit_end.isoformat(),groups=self.groups,states=self.states,paediatric_states=self.paediatric_states,quality=self.quality,
             definitions=[
              f'Activity window: {self.start.isoformat()} to {self.end.isoformat()}, inclusive. These counts do not require Active status or 180 refill days.',
              'TxNew: ARTStartDate in the activity window, excluding TI equal to YES (case and surrounding spaces ignored). Blank TI is included.',
@@ -78,7 +89,8 @@ class ActivityCounts:
              'Transferred out: CurrentARTStatus = Transferred out and Outcomes_Date in the activity window.',
              'RTT: matched previous status is neither Active nor blank, and current status is Active. No event-date filter is applied to RTT. With no selected quarterly comparison, RTT is N/A.',
              'RTT matches facility + PepID, with facility + patient_id fallback. Facility uses Datim_Code, or FacilityName when code is missing. Identifiers are trimmed and case-insensitive. Duplicate or conflicting matches are excluded and counted as ambiguous; unmatched current Active rows are reported separately.',
-             'Age/state breakdowns use the current linelist. Counts are source rows, consistent with the existing report. IIT and IIT rate remain N/A until their definitions are supplied.'])
+             f'IIT: Pharmacy_LastPickupdate + DaysOfARVRefill + 28 days falls from {self.iit_start.isoformat()} through {self.iit_end.isoformat()}, inclusive, and CurrentARTStatus is LTFU or lost to follow up. Rows missing a valid pickup date or nonnegative whole-number refill value are excluded and flagged. IIT rate remains N/A until its denominator is supplied.',
+             'Age/state breakdowns use the current linelist. Counts are source rows, consistent with the existing report.'])
 
 def activity_group(report,name='ECEWS',paediatric=False):
     activity=report.get('activity')
@@ -86,9 +98,9 @@ def activity_group(report,name='ECEWS',paediatric=False):
     if name=='ECEWS':return activity['groups']['paediatrics' if paediatric else 'all']
     return activity['paediatric_states' if paediatric else 'states'].get(name,{key:None for key in KEYS})
 
-def calculate_activity(conn,schema,table,snapshot_id,sheet,start,end,comparison_id='',comparison_sheet='',progress=None):
+def calculate_activity(conn,schema,table,snapshot_id,sheet,start,end,comparison_id='',comparison_sheet='',progress=None,iit_start='2026-10-01',iit_end='2026-10-17'):
     from psycopg import sql
-    counts=ActivityCounts(start,end,bool(comparison_id));notify=progress or (lambda event:None)
+    counts=ActivityCounts(start,end,bool(comparison_id),iit_start,iit_end);notify=progress or (lambda event:None)
     fields=sql.SQL(',').join(sql.SQL('s.data->>{}').format(sql.Literal(f)) for f in EVENT_FIELDS)
     def stream(schema,table,snapshot,sheet,name):
         with conn.cursor(name=name) as cursor:
