@@ -9,6 +9,7 @@ import tempfile
 from contextlib import ExitStack
 
 from openpyxl import load_workbook
+from date_values import json_date_value
 
 
 def normalize_state(heading, value):
@@ -105,8 +106,7 @@ def convert(source, destination, sheet=None, header_row=1, report=None, progress
                     if issue:
                         issues.append(dict(sheet=ws.title, cell=cell.coordinate, source_row=row_number,
                                            heading=headers[column], replacement=None, **issue))
-                    if isinstance(value, (datetime, date, time)):
-                        value = value.isoformat()
+                    value = json_date_value(headers[column],value)
                     if column in state_columns:value = normalize_state(headers[column], value)
                     values.append(value)
                 record = dict(source_row=row_number, data=dict(zip(headers, values)))

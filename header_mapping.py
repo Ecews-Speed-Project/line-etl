@@ -8,6 +8,7 @@ import zipfile
 from openpyxl import Workbook, load_workbook
 from excel_to_json import convert, normalize_state
 from json_compression import compress_json
+from date_values import date_only,json_date_value,is_date_heading,SHORT_DATE_FORMAT
 
 TARGET = json.loads((Path(__file__).parent / 'current_headers.json').read_text(encoding='utf-8'))
 PRIORITY_ALIASES={
@@ -99,19 +100,28 @@ def standardize(source, folder, mapping, sheet=None, header_row=1, allow_missing
         if include_excel:
             book=Workbook(write_only=True)
             worksheet=book.create_sheet('Current Linelist')
+            from openpyxl.utils import get_column_letter
+            for index,heading in enumerate(TARGET,1):
+                if is_date_heading(heading):worksheet.column_dimensions[get_column_letter(index)].width=12
             worksheet.append(TARGET)
         original_hash=metadata['source_sha256']
         return dict(metadata,headers=TARGET,original_source_sha256=original_hash,
                     source_sha256=hashlib.sha256(json.dumps([original_hash,mapping,TARGET],sort_keys=True).encode()).hexdigest())
     def transform(record):
         old=record['data']
-        mapped={t:old[mapping[t]] if mapping[t] else None for t in TARGET}
+        mapped={t:json_date_value(t,old[mapping[t]] if mapping[t] else None) for t in TARGET}
         for heading in states:mapped[heading]=normalize_state(heading,mapped[heading])
         if worksheet is not None:
             from openpyxl.cell import WriteOnlyCell
             values=[]
-            for value in mapped.values():
-                if isinstance(value,str) and value.startswith('='):
+            for heading,value in mapped.items():
+                if is_date_heading(heading):
+                    parsed=date_only(value)
+                    cell=WriteOnlyCell(worksheet,value=parsed if parsed is not None else value)
+                    cell.number_format=SHORT_DATE_FORMAT
+                    if isinstance(value,str) and value.startswith('='):cell.data_type='s'
+                    values.append(cell)
+                elif isinstance(value,str) and value.startswith('='):
                     cell=WriteOnlyCell(worksheet,value=value);cell.data_type='s';values.append(cell)
                 else:values.append(value)
             worksheet.append(values)

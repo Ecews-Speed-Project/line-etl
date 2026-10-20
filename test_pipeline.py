@@ -40,7 +40,7 @@ class ConversionTests(unittest.TestCase):
             self.assertEqual(convert(source, target), 2)
             doc = json.loads(target.read_text(encoding='utf-8'))
             self.assertEqual(doc['records'][0]['data'], {
-                'id': '001', 'date': '2026-01-02T00:00:00',
+                'id': '001', 'date': '2026-01-02',
                 'number': 0, 'flag': False, 'missing': None})
             self.assertEqual(doc['records'][1]['source_row'], 4)
             self.assertEqual(upload(target, dry_run=True), 2)
