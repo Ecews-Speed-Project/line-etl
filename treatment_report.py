@@ -34,15 +34,19 @@ def calendar_date(value):
     except ValueError:return None
 
 
-def window(end_date):
+def window(end_date,start_date=None):
     end=parse_period(end_date)
+    if start_date is not None:
+        start=parse_period(start_date)
+        if start>end:raise ValueError("Viral load start date must be on or before its end date.")
+        return start,end
     try:start=end.replace(year=end.year-1)
     except ValueError:start=end.replace(year=end.year-1,day=28)
     return start,end
 
 
-def aggregate(rows,end_date,progress=None,total=None):
-    start,end=window(end_date)
+def aggregate(rows,end_date,progress=None,total=None,start_date=None):
+    start,end=window(end_date,start_date)
     groups={name:{key:0 for key in COUNTS} for name in ['all','paediatrics','adults','unknown_age']}
     quality=dict(active_missing_refill=0,eligible_invalid_sample_date=0,eligible_invalid_result_date=0,
                  eligible_missing_or_invalid_vl=0,active_unknown_age=0)
@@ -100,8 +104,8 @@ def aggregate(rows,end_date,progress=None,total=None):
                  'Counts are rows within one selected snapshot. Status is taken from that snapshot; this does not reconstruct status at an earlier reporting date.'])
 
 
-def calculate(connection,schema,source_table,snapshot_id,sheet,end_date,progress=None,activity_start_date=None,activity_end_date=None,comparison_snapshot_id='',comparison_sheet='',iit_start_date='2026-10-01',iit_end_date='2026-10-17'):
-    window(end_date)
+def calculate(connection,schema,source_table,snapshot_id,sheet,end_date,progress=None,activity_start_date=None,activity_end_date=None,comparison_snapshot_id='',comparison_sheet='',iit_start_date='2026-10-01',iit_end_date='2026-10-17',start_date=None):
+    window(end_date,start_date)
     if not re.fullmatch(r'[0-9a-f]{64}',snapshot_id):raise ValueError('Select a valid uploaded linelist')
     notify=progress or (lambda event:None)
     notify(dict(phase='connecting'))
@@ -118,7 +122,7 @@ def calculate(connection,schema,source_table,snapshot_id,sheet,end_date,progress
             cursor.itersize=2000
             cursor.execute(sql.SQL('''SELECT {} FROM {} s CROSS JOIN LATERAL jsonb_to_record(s.data) AS j({})
                 WHERE s.source_sha256=%s AND s.sheet=%s''').format(columns,source,definitions),(snapshot_id,sheet))
-            report=aggregate(cursor,end_date,progress=notify,total=total)
+            report=aggregate(cursor,end_date,progress=notify,total=total,start_date=start_date)
         if activity_start_date is not None:
             from activity_indicators import calculate_activity
             report['activity']=calculate_activity(conn,schema,source_table,snapshot_id,sheet,activity_start_date,activity_end_date,comparison_snapshot_id,comparison_sheet,notify,iit_start_date,iit_end_date)

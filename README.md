@@ -255,3 +255,5 @@ IIT counts CurrentARTStatus equal to LTFU or lost to follow up (case-insensitive
 IIT rate uses the selected quarterly baseline and current TxNew activity count for each state/cohort. Aggregate rates use summed IIT, quarter TxCurr and TxNew counts rather than averaging state rates. Missing comparisons or nonpositive denominators show N/A.
 
 Future Excel downloads store date fields as genuine Excel dates with short-date formatting `dd/mm/yyyy` and no time component, including generation, sample and recapture dates. Date values in converted JSON use `YYYY-MM-DD`. Invalid date text remains visible for the existing review/correction workflow; no date is invented for it. Previously downloaded workbooks are unchanged.
+
+Dashboard report filters: the viral load reporting start and end dates set the inclusive sample/result window. The treatment activity from/through dates apply to IIT (pickup + refill + 28), TxNew, Death, Transferred in/out and Stopped. RTT continues comparing the selected quarterly and current snapshots without a date-window restriction. Both the on-screen report and Word export use these filters.
