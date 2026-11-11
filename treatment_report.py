@@ -12,7 +12,7 @@ COUNTS=['txcurr','eligible','sample_collected','result','vl_suppression','undete
 LABELS={'txcurr':'TxCurr','eligible':'Eligible','sample_collected':'Sample collected','result':'Result',
         'vl_suppression':'VL suppression','undetectable':'Undetectable','llv':'LLV','unsuppressed':'Unsuppressed',
         'coverage':'Coverage','suppression_rate':'Suppression rate','undetectable_rate':'Undetectable rate','llv_rate':'LLV rate'}
-FIELDS=['CurrentARTStatus','DaysOnART','LastDateOfSampleCollection','DateofCurrentViralLoad','CurrentViralLoad','Current_Age','State']
+FIELDS=['CurrentARTStatus','DaysOnART','LastDateOfSampleCollection','DateofCurrentViralLoad','CurrentViralLoad','Current_Age','State','FacilityName','Datim_Code']
 
 
 def number(value):
@@ -51,12 +51,19 @@ def aggregate(rows,end_date,progress=None,total=None,start_date=None):
     quality=dict(active_missing_days_on_art=0,eligible_invalid_sample_date=0,eligible_invalid_result_date=0,
                  eligible_missing_or_invalid_vl=0,active_unknown_age=0)
     states={}
+    facilities={}
     paediatric_states={}
     scanned=0
     for row in rows:
         status,days_on_art,sample_date,result_date,viral_load,age=row[:6]
         state=str(row[6] or "Unknown state").strip().capitalize() if len(row)>6 else "Unknown state"
         state=state or "Unknown state"
+        facility=str(row[7] or '').strip() if len(row)>7 else ''
+        code=str(row[8] or '').strip() if len(row)>8 else ''
+        facility=facility or code or 'Unknown facility'
+        facility_key=(state,code.casefold() if code else facility.casefold())
+        if facility_key not in facilities:
+            facilities[facility_key]=dict(state=state,facility=facility,datim_code=code,**{key:0 for key in COUNTS})
         if state not in states:states[state]={key:0 for key in COUNTS}
         if state not in paediatric_states:
             paediatric_states[state]={'total':{key:0 for key in COUNTS},'bands':{band:{key:0 for key in COUNTS} for band in AGE_BANDS}}
@@ -66,7 +73,7 @@ def aggregate(rows,end_date,progress=None,total=None,start_date=None):
         age=number(age)
         cohort='paediatrics' if age is not None and 0<=age<20 else 'adults' if age is not None and age>=20 else 'unknown_age'
         if cohort=='unknown_age':quality['active_unknown_age']+=1
-        selected=[groups['all'],groups[cohort],states[state]]
+        selected=[groups['all'],groups[cohort],states[state],facilities[facility_key]]
         if cohort=='paediatrics':
             band=AGE_BANDS[0 if age<1 else 1 if age<5 else 2 if age<10 else 3 if age<15 else 4]
             selected.extend([paediatric_states[state]['total'],paediatric_states[state]['bands'][band]])
@@ -87,12 +94,12 @@ def aggregate(rows,end_date,progress=None,total=None,start_date=None):
             if vl<50:group['undetectable']+=1
             elif vl<1000:group['llv']+=1
     pediatric_groups=[g for state in paediatric_states.values() for g in [state['total'],*state['bands'].values()]]
-    for group in list(groups.values())+list(states.values())+pediatric_groups:
+    for group in list(groups.values())+list(states.values())+list(facilities.values())+pediatric_groups:
         group['unsuppressed']=group['result']-group['vl_suppression']
         for name,numerator,denominator in [('sample_collection_rate','sample_collected','eligible'),('coverage','result','eligible'),('suppression_rate','vl_suppression','result'),
                                            ('undetectable_rate','undetectable','result'),('llv_rate','llv','result')]:
             group[name]=100*group[numerator]/group[denominator] if group[denominator] else None
-    return dict(start_date=start.isoformat(),end_date=end.isoformat(),groups=groups,states=dict(sorted(states.items())),paediatric_states=dict(sorted(paediatric_states.items())),quality=quality,rows_scanned=scanned,
+    return dict(start_date=start.isoformat(),end_date=end.isoformat(),groups=groups,states=dict(sorted(states.items())),paediatric_states=dict(sorted(paediatric_states.items())),facilities=sorted(facilities.values(),key=lambda item:(item['state'],item['facility'],item['datim_code'])),quality=quality,rows_scanned=scanned,
                 definitions=["TxCurr: CurrentARTStatus equals Active, ignoring case and surrounding spaces.",
                  'Eligible: Active and DaysOnART >= 180.',
                  'Sample collected: Eligible and LastDateOfSampleCollection within the inclusive reporting window.',

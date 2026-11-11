@@ -30,6 +30,8 @@ def display(name,quarterly=False):
         content=content.replace('</nav>','<a href="/upload">Weekly upload &amp; review</a><a href="/flat">Weekly flat table</a></nav>',1)
     else:
         content=content.replace('</nav>','<a href="/quarterly/upload">Quarterly upload &amp; review</a><a href="/quarterly/flat">Quarterly flat table</a><a href="/quarterly/errors">Quarterly type corrections</a><a href="/quarterly/dashboard">Quarterly dashboard</a></nav>',1)
+    if 'href="/cdr"' not in content:
+        content=content.replace('</nav>','<a href="/cdr">CDR JSON export</a></nav>',1)
     if os.environ.get('APP_ACCESS_PASSWORD'):
         content = content.replace('</nav>', '</nav><form action="/logout" method="post"><button type="submit">Sign out</button></form>')
     if os.environ.get('DATABASE_URL'):

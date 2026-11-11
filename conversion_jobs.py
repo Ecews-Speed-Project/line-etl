@@ -2,6 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 import json
 import os
+import re
 from pathlib import Path
 import threading
 import time
@@ -90,9 +91,14 @@ def run(job_id):
             if len(sheet_names)<2:
                 raise ValueError('The workbook must have at least two worksheets')
             files=[]
+            used_names=set()
             for position,sheet_name in enumerate(sheet_names,1):
                 sheet_report={}
-                json_filename=f'cdr_sheet_{position}.json'
+                export_name=re.sub(r'[^\w .-]', '_', sheet_name).strip(' .')[:100] or f'Sheet {position}'
+                if export_name.casefold() in used_names:
+                    export_name=f'{export_name} {position}'
+                used_names.add(export_name.casefold())
+                json_filename=f'{export_name}.json'
                 filename=f'{json_filename}.gz'
                 count=convert(source,folder(job_id)/json_filename,sheet_name,job['header_row'],report=sheet_report,
                               progress=lambda event, position=position:publish(job_id,**event),records_only=True)
