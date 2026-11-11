@@ -52,6 +52,12 @@ def headers(): return display('headers.html')
 @router.get('/convert')
 def convert(): return display('convert.html')
 
+@router.get('/cdr')
+def cdr(): return display('cdr.html')
+
+@router.get('/cdr-export')
+def cdr_export(): return display('cdr.html')
+
 @router.get('/upload')
 def upload(): return display('upload.html')
 

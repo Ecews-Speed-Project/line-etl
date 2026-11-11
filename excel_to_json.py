@@ -20,7 +20,8 @@ def normalize_state(heading, value):
 
 
 def convert(source, destination, sheet=None, header_row=1, report=None, progress=None,
-            metadata_transform=None,record_transform=None,original_destination=None,final_metadata=None):
+            metadata_transform=None,record_transform=None,original_destination=None,final_metadata=None,
+            records_only=False):
     source, destination = Path(source), Path(destination)
     if source.resolve() == destination.resolve():
         raise ValueError('Input and output must be different files')
@@ -81,7 +82,7 @@ def convert(source, destination, sheet=None, header_row=1, report=None, progress
                 original_output=resources.enter_context(Path(original_destination).open('w',encoding='utf-8'))
                 original_output.write(json.dumps(metadata,ensure_ascii=False)[:-1]+', "records": [\n')
             if metadata_transform:metadata=metadata_transform(metadata)
-            output.write(json.dumps(metadata, ensure_ascii=False)[:-1] + ', "records": [\n')
+            output.write('[\n' if records_only else json.dumps(metadata, ensure_ascii=False)[:-1] + ', "records": [\n')
             for row_number, (cells, cached_cells) in enumerate(zip(rows, cached_rows), header_row + 1):
                 scanned = row_number-header_row
                 if scanned % 500 == 0:
@@ -113,18 +114,21 @@ def convert(source, destination, sheet=None, header_row=1, report=None, progress
                 if original_output:
                     if count:original_output.write(',\n')
                     original_output.write(json.dumps(record,ensure_ascii=False,allow_nan=False))
-                if record_transform:record=record_transform(record)
+                if records_only:
+                    record = record['data']
+                elif record_transform:
+                    record=record_transform(record)
                 if count:
                     output.write(',\n')
                 output.write(json.dumps(record, ensure_ascii=False, allow_nan=False))
                 count += 1
             summary = dict(formula_cells=formula_count, flagged_cells=len(issues), issues=issues,
                            note='Formula results use values saved by Excel, which may be stale. Excel errors and formulas without saved results become null; no formulas are recalculated.')
-            ending='\n], "conversion_report": '+json.dumps(summary,ensure_ascii=False)
+            ending='\n]' if records_only else '\n], "conversion_report": '+json.dumps(summary,ensure_ascii=False)
             if original_output:original_output.write(ending+'}\n')
             if final_metadata:
                 for key,value in final_metadata(summary,count).items():ending+=', '+json.dumps(key)+': '+json.dumps(value,ensure_ascii=False)
-            output.write(ending+'}\n')
+            output.write(ending+('\n' if records_only else '}\n'))
         notify(phase='finalizing', processed=scanned, records=count, total_rows=total_rows)
         os.replace(temp, destination)
         temp = None

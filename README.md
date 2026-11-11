@@ -9,7 +9,7 @@ paediatric, adult and unknown-age breakdowns. Download Word report produces a
 two-page brief based on the retained Word template using the same selection.
 
 TxCurr uses Active in CurrentARTStatus. The VL eligibility counts require Active and
-DaysOfARVRefill >=180. Sample and result dates must fall within the inclusive
+DaysOnART >=180. Sample and result dates must fall within the inclusive
 calendar-year window ending on the selected date. A valid Result also requires a
 finite numeric CurrentViralLoad >=0. Suppression is <1000, undetectable <50, LLV
 is >=50 and <1000, and unsuppressed is Result minus suppression. Coverage divides
@@ -244,7 +244,7 @@ With both weekly and quarterly snapshots selected, NetNew is weekly Active TxCur
 
 ### Treatment activity indicators
 
-The report has a separate inclusive activity window, defaulting to 2026-07-01 through 2026-09-30. TxNew counts ARTStartDate in that window, explicitly excluding TI=YES; blank TI is included as requested. Transferred in counts Date_Transfered_In in the window. Death, Stopped and Transferred out require Outcomes_Date in the window and CurrentARTStatus equal to Death, Discontinued care and Transferred out respectively. These indicators do not apply the VL Active/refill eligibility filters.
+The report has a separate inclusive activity window, defaulting to 2026-07-01 through 2026-09-30. TxNew counts ARTStartDate in that window, explicitly excluding TI=YES; blank TI is included as requested. Transferred in counts Date_Transfered_In in the window. Death, Stopped and Transferred out require Outcomes_Date in the window and CurrentARTStatus equal to Death, Discontinued care and Transferred out respectively. These indicators do not apply the VL Active/days-on-ART eligibility filters.
 
 RTT compares the selected quarterly snapshot with current Active records: previous status must be neither Active nor blank. It has no event-date condition. Matching uses facility (Datim_Code, otherwise FacilityName) and PepID, with patient_id as fallback; identifiers are trimmed/case-insensitive. Duplicate or conflicting identities are excluded, and unmatched/ambiguous Active rows appear in report quality counts. A missing comparison gives N/A. Matching indexes are stored in a temporary local SQLite file and removed after calculation; PostgreSQL reads are streamed. Current age and state determine breakdowns.
 
@@ -257,3 +257,4 @@ IIT rate uses the selected quarterly baseline and current TxNew activity count f
 Future Excel downloads store date fields as genuine Excel dates with short-date formatting `dd/mm/yyyy` and no time component, including generation, sample and recapture dates. Date values in converted JSON use `YYYY-MM-DD`. Invalid date text remains visible for the existing review/correction workflow; no date is invented for it. Previously downloaded workbooks are unchanged.
 
 Dashboard report filters: the viral load reporting start and end dates set the inclusive sample/result window. The treatment activity from/through dates apply to IIT (pickup + refill + 28), TxNew, Death, Transferred in/out and Stopped. RTT continues comparing the selected quarterly and current snapshots without a date-window restriction. Both the on-screen report and Word export use these filters.
+The CDR JSON export page at `/cdr` accepts an `.xlsx` workbook, saves it to local disk, and converts its first two worksheets into separate plain JSON array downloads. It preserves worksheet headings and row values, uses saved Excel formula results, normalizes state names, and reports Excel errors as empty values.

@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 
+from openpyxl import load_workbook
 from excel_to_json import convert
 from json_compression import compress_json
 from web_common import ROOT
@@ -37,16 +38,18 @@ def publish(job_id, **event):
             os.replace(temp,folder(job_id)/'status.json')
 
 
-def create(filename,sheet='',header_row=1):
+def create(filename,sheet='',header_row=1,mode='linelist'):
     name=Path(filename.replace('\\','/')).name
     if not name.lower().endswith('.xlsx') or len(name)>220:
         raise ValueError('Choose an .xlsx workbook')
     if type(header_row) is not int or header_row<1:
         raise ValueError('Header row must be positive')
+    if mode not in ('linelist','cdr_first_two'):
+        raise ValueError('Invalid conversion type')
     job_id=uuid.uuid4().hex
     folder(job_id).mkdir(parents=True)
     with LOCK:
-        JOBS[job_id]=dict(id=job_id,filename=name,sheet=sheet,header_row=header_row,
+        JOBS[job_id]=dict(id=job_id,filename=name,sheet=sheet,header_row=header_row,mode=mode,
                           state='created',phase='waiting_for_upload',bytes_received=0,records=0,processed=0)
     publish(job_id)
     return status(job_id)
@@ -77,6 +80,30 @@ def run(job_id):
         job=status(job_id)
         report={}
         publish(job_id,state='converting',phase='hashing')
+        if job['mode']=='cdr_first_two':
+            source=folder(job_id)/job['filename']
+            workbook=load_workbook(source,read_only=True,data_only=True)
+            try:
+                sheet_names=workbook.sheetnames[:2]
+            finally:
+                workbook.close()
+            if len(sheet_names)<2:
+                raise ValueError('The workbook must have at least two worksheets')
+            files=[]
+            for position,sheet_name in enumerate(sheet_names,1):
+                sheet_report={}
+                json_filename=f'cdr_sheet_{position}.json'
+                filename=f'{json_filename}.gz'
+                count=convert(source,folder(job_id)/json_filename,sheet_name,job['header_row'],report=sheet_report,
+                              progress=lambda event, position=position:publish(job_id,**event),records_only=True)
+                compress_json(folder(job_id)/json_filename,folder(job_id)/filename,
+                              progress=lambda event, position=position:publish(job_id,**event))
+                files.append(dict(position=position,sheet=sheet_name,filename=filename,records=count,
+                                  flagged_cells=sheet_report['flagged_cells']))
+            publish(job_id,state='completed',phase='completed',files=files,
+                    records=sum(item['records'] for item in files),
+                    flagged_cells=sum(item['flagged_cells'] for item in files))
+            return
         count=convert(folder(job_id)/job['filename'],folder(job_id)/'linelist.json',
                       job['sheet'] or None,job['header_row'],report=report,
                       progress=lambda event:publish(job_id,**event))

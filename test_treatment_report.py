@@ -107,3 +107,20 @@ class TreatmentTests(unittest.TestCase):
         self.assertIsNone(calendar_date('2026-09-19junk'))
         self.assertIsNone(calendar_date('19/09/2026'))
         self.assertIsNone(number('1_80'))
+
+class EligibilityDaysOnARTTests(unittest.TestCase):
+    def test_eligibility_uses_days_on_art_not_refill_days(self):
+        from treatment_report import FIELDS
+        self.assertIn('DaysOnART',FIELDS)
+        self.assertNotIn('DaysOfARVRefill',FIELDS)
+        clients=[dict(CurrentARTStatus='Active',DaysOnART=180,DaysOfARVRefill=30),
+                 dict(CurrentARTStatus='Active',DaysOnART=179,DaysOfARVRefill=180),
+                 dict(CurrentARTStatus='Active',DaysOnART=None,DaysOfARVRefill=180),
+                 dict(CurrentARTStatus='LTFU',DaysOnART=200,DaysOfARVRefill=180)]
+        for client in clients:
+            client.update(LastDateOfSampleCollection='2026-10-01',DateofCurrentViralLoad='2026-10-01',CurrentViralLoad=25,Current_Age=19,State='Delta')
+        report=aggregate([tuple(c.get(f) for f in FIELDS) for c in clients],'2026-10-17',start_date='2026-10-01')
+        self.assertEqual(report['groups']['all']['eligible'],1)
+        self.assertEqual(report['groups']['all']['result'],1)
+        self.assertEqual(report['groups']['all']['sample_collected'],1)
+        self.assertEqual(report['quality']['active_missing_days_on_art'],1)

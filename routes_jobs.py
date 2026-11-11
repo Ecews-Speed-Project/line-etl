@@ -14,7 +14,7 @@ router=APIRouter()
 async def create_job(request:Request):
     try:
         body=await request.json()
-        return create(body.get('filename',''),body.get('sheet',''),body.get('header_row',1))
+        return create(body.get('filename',''),body.get('sheet',''),body.get('header_row',1),body.get('mode','linelist'))
     except (ValueError,AttributeError) as exc:
         raise HTTPException(400,str(exc)) from None
 
@@ -63,6 +63,17 @@ def download(job_id:str,compressed:bool=False):
     filename='linelist.json.gz' if compressed else 'linelist.json'
     if not (folder(job_id)/filename).exists():raise HTTPException(404,'Compressed download is not available for this older job; convert again or download the plain JSON')
     return FileResponse(folder(job_id)/filename,media_type='application/gzip' if compressed else 'application/json',filename=filename)
+
+
+@router.get('/api/conversions/{job_id}/cdr-download/{position}')
+def cdr_download(job_id:str,position:int):
+    job=job_status(job_id)
+    if job.get('mode')!='cdr_first_two' or job['state']!='completed':
+        raise HTTPException(409,'The two-sheet CDR export is not complete')
+    file=next((item for item in job.get('files',[]) if item['position']==position),None)
+    if not file or not (folder(job_id)/file['filename']).exists():
+        raise HTTPException(404,'CDR JSON file not found')
+    return FileResponse(folder(job_id)/file['filename'],media_type='application/gzip',filename=file['filename'])
 
 
 @router.get('/api/conversions/{job_id}/errors')

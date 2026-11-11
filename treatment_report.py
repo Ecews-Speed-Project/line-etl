@@ -12,7 +12,7 @@ COUNTS=['txcurr','eligible','sample_collected','result','vl_suppression','undete
 LABELS={'txcurr':'TxCurr','eligible':'Eligible','sample_collected':'Sample collected','result':'Result',
         'vl_suppression':'VL suppression','undetectable':'Undetectable','llv':'LLV','unsuppressed':'Unsuppressed',
         'coverage':'Coverage','suppression_rate':'Suppression rate','undetectable_rate':'Undetectable rate','llv_rate':'LLV rate'}
-FIELDS=['CurrentARTStatus','DaysOfARVRefill','LastDateOfSampleCollection','DateofCurrentViralLoad','CurrentViralLoad','Current_Age','State']
+FIELDS=['CurrentARTStatus','DaysOnART','LastDateOfSampleCollection','DateofCurrentViralLoad','CurrentViralLoad','Current_Age','State']
 
 
 def number(value):
@@ -48,13 +48,13 @@ def window(end_date,start_date=None):
 def aggregate(rows,end_date,progress=None,total=None,start_date=None):
     start,end=window(end_date,start_date)
     groups={name:{key:0 for key in COUNTS} for name in ['all','paediatrics','adults','unknown_age']}
-    quality=dict(active_missing_refill=0,eligible_invalid_sample_date=0,eligible_invalid_result_date=0,
+    quality=dict(active_missing_days_on_art=0,eligible_invalid_sample_date=0,eligible_invalid_result_date=0,
                  eligible_missing_or_invalid_vl=0,active_unknown_age=0)
     states={}
     paediatric_states={}
     scanned=0
     for row in rows:
-        status,refill,sample_date,result_date,viral_load,age=row[:6]
+        status,days_on_art,sample_date,result_date,viral_load,age=row[:6]
         state=str(row[6] or "Unknown state").strip().capitalize() if len(row)>6 else "Unknown state"
         state=state or "Unknown state"
         if state not in states:states[state]={key:0 for key in COUNTS}
@@ -71,9 +71,9 @@ def aggregate(rows,end_date,progress=None,total=None,start_date=None):
             band=AGE_BANDS[0 if age<1 else 1 if age<5 else 2 if age<10 else 3 if age<15 else 4]
             selected.extend([paediatric_states[state]['total'],paediatric_states[state]['bands'][band]])
         for group in selected:group['txcurr']+=1
-        refill=number(refill)
-        if refill is None:quality['active_missing_refill']+=1
-        if refill is None or refill<180:continue
+        days_on_art=number(days_on_art)
+        if days_on_art is None:quality['active_missing_days_on_art']+=1
+        if days_on_art is None or days_on_art<180:continue
         for group in selected:group['eligible']+=1
         collected=calendar_date(sample_date);result_day=calendar_date(result_date);vl=number(viral_load)
         if collected is None:quality['eligible_invalid_sample_date']+=1
@@ -94,7 +94,7 @@ def aggregate(rows,end_date,progress=None,total=None,start_date=None):
             group[name]=100*group[numerator]/group[denominator] if group[denominator] else None
     return dict(start_date=start.isoformat(),end_date=end.isoformat(),groups=groups,states=dict(sorted(states.items())),paediatric_states=dict(sorted(paediatric_states.items())),quality=quality,rows_scanned=scanned,
                 definitions=["TxCurr: CurrentARTStatus equals Active, ignoring case and surrounding spaces.",
-                 'Eligible: Active and DaysOfARVRefill >= 180. This uses refill days, not days on ART.',
+                 'Eligible: Active and DaysOnART >= 180.',
                  'Sample collected: Eligible and LastDateOfSampleCollection within the inclusive reporting window.',
                  'Result: Eligible, DateofCurrentViralLoad in the window and a finite numeric CurrentViralLoad >= 0.',
                  'VL suppression: Result with CurrentViralLoad < 1000. Undetectable: Result with CurrentViralLoad < 50.',
