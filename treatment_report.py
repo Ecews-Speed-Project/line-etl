@@ -8,7 +8,7 @@ from upload_json import parse_period
 from periods import period_text
 
 AGE_BANDS=['Less than 1','1-4yrs','5-9yrs','10-14yrs','15-19yrs']
-COUNTS=['txcurr','eligible','sample_collected','result','vl_suppression','undetectable','llv','unsuppressed']
+COUNTS=['txcurr','eligible','sample_collected','result','vl_suppression','undetectable','llv','unsuppressed','ipi_suppressed']
 LABELS={'txcurr':'TxCurr','eligible':'Eligible','sample_collected':'Sample collected','result':'Result',
         'vl_suppression':'VL suppression','undetectable':'Undetectable','llv':'LLV','unsuppressed':'Unsuppressed',
         'coverage':'Coverage','suppression_rate':'Suppression rate','undetectable_rate':'Undetectable rate','llv_rate':'LLV rate'}
@@ -47,6 +47,7 @@ def window(end_date,start_date=None):
 
 def aggregate(rows,end_date,progress=None,total=None,start_date=None):
     start,end=window(end_date,start_date)
+    ipi_start,_=window(end_date)
     groups={name:{key:0 for key in COUNTS} for name in ['all','paediatrics','adults','unknown_age']}
     quality=dict(active_missing_days_on_art=0,eligible_invalid_sample_date=0,eligible_invalid_result_date=0,
                  eligible_missing_or_invalid_vl=0,active_unknown_age=0)
@@ -78,6 +79,9 @@ def aggregate(rows,end_date,progress=None,total=None,start_date=None):
             band=AGE_BANDS[0 if age<1 else 1 if age<5 else 2 if age<10 else 3 if age<15 else 4]
             selected.extend([paediatric_states[state]['total'],paediatric_states[state]['bands'][band]])
         for group in selected:group['txcurr']+=1
+        result_day=calendar_date(result_date);vl=number(viral_load)
+        if result_day is not None and ipi_start<=result_day<=end and vl is not None and 0<=vl<1000:
+            for group in selected:group['ipi_suppressed']+=1
         days_on_art=number(days_on_art)
         if days_on_art is None:quality['active_missing_days_on_art']+=1
         if days_on_art is None or days_on_art<180:continue
@@ -96,11 +100,11 @@ def aggregate(rows,end_date,progress=None,total=None,start_date=None):
     pediatric_groups=[g for state in paediatric_states.values() for g in [state['total'],*state['bands'].values()]]
     for group in list(groups.values())+list(states.values())+list(facilities.values())+pediatric_groups:
         group['unsuppressed']=group['result']-group['vl_suppression']
-        for name,numerator,denominator in [('sample_collection_rate','sample_collected','eligible'),('coverage','result','eligible'),('suppression_rate','vl_suppression','result'),
+        for name,numerator,denominator in [('ipi_suppression_rate','ipi_suppressed','txcurr'),('sample_collection_rate','sample_collected','eligible'),('coverage','result','eligible'),('suppression_rate','vl_suppression','result'),
                                            ('undetectable_rate','undetectable','result'),('llv_rate','llv','result')]:
             group[name]=100*group[numerator]/group[denominator] if group[denominator] else None
     return dict(start_date=start.isoformat(),end_date=end.isoformat(),groups=groups,states=dict(sorted(states.items())),paediatric_states=dict(sorted(paediatric_states.items())),facilities=sorted(facilities.values(),key=lambda item:(item['state'],item['facility'],item['datim_code'])),quality=quality,rows_scanned=scanned,
-                definitions=["TxCurr: CurrentARTStatus equals Active, ignoring case and surrounding spaces.",
+                definitions=[f'IPI Suppressed: Active with a valid numeric viral load >= 0 and < 1000 dated {ipi_start.isoformat()} through {end.isoformat()}, inclusive; no days-on-ART requirement. IPI Suppression rate = IPI Suppressed / TxCurr x 100; zero TxCurr is N/A.',"TxCurr: CurrentARTStatus equals Active, ignoring case and surrounding spaces.",
                  'Eligible: Active and DaysOnART >= 180.',
                  'Sample collected: Eligible and LastDateOfSampleCollection within the inclusive reporting window.',
                  'Result: Eligible, DateofCurrentViralLoad in the window and a finite numeric CurrentViralLoad >= 0.',

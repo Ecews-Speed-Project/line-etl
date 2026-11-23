@@ -70,6 +70,15 @@ def template_xml(report):
             noun='client' if events['iit']==1 else 'clients'
             iit_metrics=paediatric_comparison if index==9 else overall_comparison
             nodes[0].text=f"IIT from {activity['iit_start_date']} to {activity['iit_end_date']} is {formatted(events['iit'])} {noun}. IIT rate is {rate_text(iit_metrics['iit_rate'])}."
+    ipi_count=a.get('ipi_suppressed')
+    ipi_rate=a.get('ipi_suppression_rate')
+    ipi_rate_text='N/A' if ipi_rate is None else f'{ipi_rate:.1f}%'
+    summary=(f" IPI: {formatted(ipi_count)} of {formatted(a['txcurr'])} Active clients had a viral load below 1,000 within the year ending {report['end_date']}, giving an IPI suppression rate of {ipi_rate_text}.")
+    paragraph=body[21]
+    run=etree.SubElement(paragraph,W+'r')
+    text=etree.SubElement(run,W+'t')
+    text.set('{http://www.w3.org/XML/1998/namespace}space','preserve')
+    text.text=summary
     if report.get('workflow')=='quarterly':
         for paragraph in body.findall('w:p',NS):
             for node in paragraph.findall('.//w:t',NS):
@@ -78,8 +87,8 @@ def template_xml(report):
 
 def table_models(report):
     end=date.fromisoformat(report['end_date']);fy=end.year+(end.month>=10);q=((end.month+2)%12)//3+1
-    keys=['txcurr','eligible','sample_collected','result','vl_suppression','undetectable','llv','coverage','suppression_rate','undetectable_rate','llv_rate','unsuppressed']
-    names=['State','TxCurr','Eligible','Sample','Result','Suppression','Undetectable','LLV','Coverage','Suppression Rate','Undetectable Rate','LLV Rate','Unsuppressed']
+    keys=['txcurr','eligible','sample_collected','result','vl_suppression','undetectable','llv','coverage','suppression_rate','undetectable_rate','llv_rate','unsuppressed','ipi_suppressed','ipi_suppression_rate']
+    names=['State','TxCurr','Eligible','Sample','Result','Suppression','Undetectable','LLV','Coverage','Suppression Rate','Undetectable Rate','LLV Rate','Unsuppressed','IPI Suppressed','IPI Suppression rate']
     row=lambda name,g:[name]+[formatted(g[k],k.endswith('_rate') or k=='coverage') for k in keys]
     main={'kind':'viral','title':f'Viral Load Cascade - FY{str(fy)[-2:]}Q{q} as @ {end.day}{"th" if 10<end.day%100<14 else {1:"st",2:"nd",3:"rd"}.get(end.day%10,"th")} {end:%B %Y}',
           'headers':names,'rows':[row(n,g) for n,g in report.get('states',{}).items()]+[row('ECEWS',report['groups']['all'])]}
@@ -101,8 +110,8 @@ def table_models(report):
             rows.append([n,baseline(n),formatted(g['txcurr']),formatted(events['txnew']),formatted(events['transferred_in']),formatted(events['rtt']),formatted(events['iit']),rate_text(metrics['iit_rate']),rate_text(metrics['retention_rate']),formatted(metrics['netnew']),formatted(events['death']),formatted(events['stopped']),formatted(events['transferred_out'])])
         return {'kind':kind,'headers':treatment_headers,'rows':rows}
     pediatric=report.get('paediatric_states',{})
-    pk=['txcurr','eligible','sample_collected','sample_collection_rate','result','vl_suppression','undetectable','llv','coverage','suppression_rate','llv_rate','undetectable_rate']
-    ph=['State','Age_Band','TxCurr','Eligible','Sample Collected','Sample collection Rate','VL Result','Suppression','Undetectable','LLV','Coverage','Suppression Rate','LLV Rate','Undetectable rate']
+    pk=['txcurr','eligible','sample_collected','sample_collection_rate','result','vl_suppression','undetectable','llv','coverage','suppression_rate','llv_rate','undetectable_rate','ipi_suppressed','ipi_suppression_rate']
+    ph=['State','Age_Band','TxCurr','Eligible','Sample Collected','Sample collection Rate','VL Result','Suppression','Undetectable','LLV','Coverage','Suppression Rate','LLV Rate','Undetectable rate','IPI Suppressed','IPI Suppression rate']
     pr=[]
     for state,g in pediatric.items():
         pr.append({'kind':'header','cells':ph})

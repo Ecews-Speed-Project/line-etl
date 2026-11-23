@@ -2,3 +2,5 @@
 
 @media(max-width:600px){.brief-document{min-width:740px}.brief-page{padding:48px 40px}}
 .brief-p{color:#002060;line-height:1.3;font-family:inherit}
+
+.brief-table.viral tr:not(.brief-band)>:nth-last-child(-n+2),.brief-table.paediatric tr:not(.brief-band)>:nth-last-child(-n+2),.ipi-column{background:#b6e3a3!important}

@@ -49,6 +49,7 @@ def render_table(model,ratio):
             if kind=='paediatric':fill='#92d050' if row['kind']=='header' else '#a6c9eb' if row['kind']=='total' else 'white'
             if kind=='treatment' and j>=7:fill='#a6c9eb' if j<10 else '#e0f0d4'
             if kind=='paediatric-treatment' and j>=7:fill='#fce4d6' if j<10 else '#efceed'
+            if kind in ('viral','paediatric') and j>=cols-2:fill='#b6e3a3'
             draw.rectangle((x0,pos,min(x1,width-1),min(y1,height-1)),fill=fill,outline='black',width=2)
             centered(text,(x0,pos,x1,y1),row['kind']=='total',kind=='viral' and row['kind']=='header')
         pos=y1
