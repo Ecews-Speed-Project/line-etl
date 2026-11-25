@@ -4,7 +4,7 @@ const reportEl=(tag,text)=>{const e=document.createElement(tag);if(text!==undefi
 window.populateTreatmentSnapshots=items=>{
  reportSelector.replaceChildren();const first=reportEl('option','Choose one linelist');first.value='';reportSelector.append(first);
  for(const item of items){const option=reportEl('option',(item.period||'Unassigned period')+' · '+item.file+' · '+item.sheet+' · '+Number(item.rows).toLocaleString()+' rows');option.value=JSON.stringify({id:item.id,sheet:item.sheet,period:item.period,period_end:item.period_end});reportSelector.append(option);}
- reportSelector.disabled=false;document.getElementById('calculate-treatment').disabled=false;document.getElementById('download-treatment').disabled=false;document.getElementById('treatment-results').replaceChildren();
+ document.getElementById('calculate-unique-treatment').disabled=false;document.getElementById('download-unique-treatment').disabled=false;document.getElementById('unique-treatment-results').replaceChildren();reportSelector.disabled=false;document.getElementById('calculate-treatment').disabled=false;document.getElementById('download-treatment').disabled=false;document.getElementById('treatment-results').replaceChildren();
 };
 function briefTable(model){
  const wrap=reportEl('div');wrap.className='brief-table-wrap';const table=reportEl('table');table.className='brief-table '+model.kind;table.setAttribute('aria-label',model.title||model.kind+' summary');
@@ -27,16 +27,17 @@ function renderBrief(report,box){
  details.append(reportEl('p','N/A means treatment definitions or comparison data are unavailable. Status and ages reflect the selected snapshot. The date filter does not reconstruct historical status.'));
  for(const text of report.definitions)details.append(reportEl('p',text));details.append(reportEl('p','Active records with unknown age: '+report.quality.active_unknown_age+'. Eligible records with missing or invalid VL: '+report.quality.eligible_missing_or_invalid_vl+'.'));box.append(details);
 }
-async function calculateTreatment(word){
+async function calculateTreatment(word,unique=false){
+ const reportStatus=document.getElementById(unique?'unique-treatment-status':'treatment-status');
  const form=document.getElementById('dashboard-form');if(!form.reportValidity())return;
  if(!reportSelector.value){reportStatus.textContent='Choose one uploaded linelist first.';return;}
  const start=document.getElementById('report-start'),end=document.getElementById('report-end');if(!start.reportValidity()||!end.reportValidity())return;if(start.value>end.value){reportStatus.textContent='Viral load start date must be on or before its end date.';return;}const activityStart=document.getElementById('activity-start'),activityEnd=document.getElementById('activity-end');if(!activityStart.reportValidity()||!activityEnd.reportValidity())return;if(activityStart.value>activityEnd.value){reportStatus.textContent='Activity start date must be on or before its end date.';return;}
- const buttons=[document.getElementById('calculate-treatment'),document.getElementById('download-treatment')];buttons.forEach(b=>b.disabled=true);let tracker,success=false;
+ const buttons=['calculate-treatment','download-treatment','calculate-unique-treatment','download-unique-treatment'].map(id=>document.getElementById(id));buttons.forEach(b=>b.disabled=true);let tracker,success=false;
  try{
-  const selected=JSON.parse(reportSelector.value),data=new FormData(form);data.set('snapshot_id',selected.id);data.set('sheet',selected.sheet);data.set('start_date',start.value);data.set('end_date',end.value);data.set('word',String(word));data.set('activity_start_date',activityStart.value);data.set('activity_end_date',activityEnd.value);if(!treatmentApiPrefix&&comparisonSelector.value){const comparison=JSON.parse(comparisonSelector.value);data.set('comparison_snapshot_id',comparison.id);data.set('comparison_sheet',comparison.sheet);}tracker=await DatabaseProgress.start('report',reportStatus);data.set('progress_id',tracker.id);reportStatus.textContent=word?'Preparing Word report…':'Calculating indicators…';
+  const selected=JSON.parse(reportSelector.value),data=new FormData(form);data.set('snapshot_id',selected.id);data.set('sheet',selected.sheet);data.set('start_date',start.value);data.set('end_date',end.value);data.set('word',String(word));data.set('unique_only',String(unique));data.set('activity_start_date',activityStart.value);data.set('activity_end_date',activityEnd.value);if(!treatmentApiPrefix&&comparisonSelector.value){const comparison=JSON.parse(comparisonSelector.value);data.set('comparison_snapshot_id',comparison.id);data.set('comparison_sheet',comparison.sheet);}tracker=await DatabaseProgress.start('report',reportStatus);data.set('progress_id',tracker.id);reportStatus.textContent=word?'Preparing Word report…':'Calculating indicators…';
   const response=await fetch(treatmentApiPrefix+'/api/treatment-report',{method:'POST',body:data});if(!response.ok){const body=await response.json();throw new Error(typeof body.detail==='string'?body.detail:'Check the reporting fields.');}
-  if(word){const url=URL.createObjectURL(await response.blob()),link=reportEl('a');link.href=url;link.download=(treatmentApiPrefix?'quarterly_':'')+'treatment_report_'+end.value+'.docx';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);reportStatus.textContent='Word report downloaded.';}
-  else{renderBrief(await response.json(),document.getElementById('treatment-results'));reportStatus.textContent='Report ready. Word export follows the supplied brief template.';}
+  if(word){const url=URL.createObjectURL(await response.blob()),link=reportEl('a');link.href=url;link.download=(treatmentApiPrefix?'quarterly_':'')+(unique?'unique_client_':'')+'treatment_report_'+end.value+'.docx';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);reportStatus.textContent='Word report downloaded.';}
+  else{renderBrief(await response.json(),document.getElementById(unique?'unique-treatment-results':'treatment-results'));reportStatus.textContent='Report ready. Word export follows the supplied brief template.';}
   success=true;
  }catch(error){reportStatus.textContent=error.message;}finally{if(tracker)await tracker.finish(success);buttons.forEach(b=>b.disabled=false);}
 }
@@ -58,3 +59,5 @@ window.loadQuarterlyComparisons=async form=>{
   comparisonSelector.disabled=false;
  }catch(error){comparisonSelector.options[0].value='';comparisonStatus.textContent=error.message;}
 };
+
+document.getElementById('calculate-unique-treatment').onclick=()=>calculateTreatment(false,true);document.getElementById('download-unique-treatment').onclick=()=>calculateTreatment(true,true);

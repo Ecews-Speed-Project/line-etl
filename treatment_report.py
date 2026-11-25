@@ -12,7 +12,7 @@ COUNTS=['txcurr','eligible','sample_collected','result','vl_suppression','undete
 LABELS={'txcurr':'TxCurr','eligible':'Eligible','sample_collected':'Sample collected','result':'Result',
         'vl_suppression':'VL suppression','undetectable':'Undetectable','llv':'LLV','unsuppressed':'Unsuppressed',
         'coverage':'Coverage','suppression_rate':'Suppression rate','undetectable_rate':'Undetectable rate','llv_rate':'LLV rate'}
-FIELDS=['CurrentARTStatus','DaysOnART','LastDateOfSampleCollection','DateofCurrentViralLoad','CurrentViralLoad','Current_Age','State','FacilityName','Datim_Code']
+FIELDS=['CurrentARTStatus','DaysOnART','LastDateOfSampleCollection','DateofCurrentViralLoad','CurrentViralLoad','Current_Age','State','FacilityName','Datim_Code','FingerPrint Status']
 
 
 def number(value):
@@ -45,7 +45,7 @@ def window(end_date,start_date=None):
     return start,end
 
 
-def aggregate(rows,end_date,progress=None,total=None,start_date=None):
+def aggregate(rows,end_date,progress=None,total=None,start_date=None,unique_only=False):
     start,end=window(end_date,start_date)
     ipi_start,_=window(end_date)
     groups={name:{key:0 for key in COUNTS} for name in ['all','paediatrics','adults','unknown_age']}
@@ -56,6 +56,7 @@ def aggregate(rows,end_date,progress=None,total=None,start_date=None):
     paediatric_states={}
     scanned=0
     for row in rows:
+        if unique_only and (len(row)<10 or str(row[9] or '').strip().casefold()!='enrolled'):continue
         status,days_on_art,sample_date,result_date,viral_load,age=row[:6]
         state=str(row[6] or "Unknown state").strip().capitalize() if len(row)>6 else "Unknown state"
         state=state or "Unknown state"
@@ -115,7 +116,7 @@ def aggregate(rows,end_date,progress=None,total=None,start_date=None):
                  'Counts are rows within one selected snapshot. Status is taken from that snapshot; this does not reconstruct status at an earlier reporting date.'])
 
 
-def calculate(connection,schema,source_table,snapshot_id,sheet,end_date,progress=None,activity_start_date=None,activity_end_date=None,comparison_snapshot_id='',comparison_sheet='',iit_start_date='2026-10-01',iit_end_date='2026-10-17',start_date=None):
+def calculate(connection,schema,source_table,snapshot_id,sheet,end_date,progress=None,activity_start_date=None,activity_end_date=None,comparison_snapshot_id='',comparison_sheet='',iit_start_date='2026-10-01',iit_end_date='2026-10-17',start_date=None,unique_only=False):
     window(end_date,start_date)
     if not re.fullmatch(r'[0-9a-f]{64}',snapshot_id):raise ValueError('Select a valid uploaded linelist')
     notify=progress or (lambda event:None)
@@ -126,6 +127,9 @@ def calculate(connection,schema,source_table,snapshot_id,sheet,end_date,progress
             GROUP BY source_file,period''').format(source),(snapshot_id,sheet)).fetchall()
         if len(context)!=1:raise ValueError('Select exactly one existing linelist snapshot and sheet')
         filename,period,total=context[0]
+        if unique_only:
+            present=conn.execute(sql.SQL("SELECT EXISTS(SELECT 1 FROM {} WHERE source_sha256=%s AND sheet=%s AND data ? 'FingerPrint Status')").format(source),(snapshot_id,sheet)).fetchone()[0]
+            if not present:raise ValueError('This snapshot has no FingerPrint Status column. Upload a linelist containing that column to generate the unique client report.')
         notify(dict(phase='reporting',processed=0,total=total))
         definitions=sql.SQL(',').join(sql.SQL('{} text').format(sql.Identifier(h)) for h in FIELDS)
         columns=sql.SQL(',').join(sql.SQL('j.{}').format(sql.Identifier(h)) for h in FIELDS)
@@ -133,11 +137,13 @@ def calculate(connection,schema,source_table,snapshot_id,sheet,end_date,progress
             cursor.itersize=2000
             cursor.execute(sql.SQL('''SELECT {} FROM {} s CROSS JOIN LATERAL jsonb_to_record(s.data) AS j({})
                 WHERE s.source_sha256=%s AND s.sheet=%s''').format(columns,source,definitions),(snapshot_id,sheet))
-            report=aggregate(cursor,end_date,progress=notify,total=total,start_date=start_date)
+            report=aggregate(cursor,end_date,progress=notify,total=total,start_date=start_date,unique_only=unique_only)
         if activity_start_date is not None:
             from activity_indicators import calculate_activity
-            report['activity']=calculate_activity(conn,schema,source_table,snapshot_id,sheet,activity_start_date,activity_end_date,comparison_snapshot_id,comparison_sheet,notify,iit_start_date,iit_end_date)
+            report['activity']=calculate_activity(conn,schema,source_table,snapshot_id,sheet,activity_start_date,activity_end_date,comparison_snapshot_id,comparison_sheet,notify,iit_start_date,iit_end_date,unique_only=unique_only)
             report['definitions'].extend(report['activity']['definitions'])
+    report['unique_only']=unique_only
+    if unique_only:report['definitions'].insert(0,'Treatment report for unique client: only FingerPrint Status = ENROLLED, ignoring case and surrounding spaces. All other indicator rules remain unchanged; this is an enrollment filter, not additional deduplication.')
     report['source']=dict(file=filename,period=period_text(period),sheet=sheet,snapshot_id=snapshot_id,rows=total)
     notify(dict(phase='completed',state='completed',processed=total,total=total))
     return report

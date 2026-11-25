@@ -79,6 +79,9 @@ def template_xml(report):
     text=etree.SubElement(run,W+'t')
     text.set('{http://www.w3.org/XML/1998/namespace}space','preserve')
     text.text=summary
+    if report.get('unique_only'):
+        node=etree.SubElement(etree.SubElement(body[0],W+'r'),W+'t')
+        node.text=' — Treatment report for unique client (FingerPrint Status: ENROLLED)'
     if report.get('workflow')=='quarterly':
         for paragraph in body.findall('w:p',NS):
             for node in paragraph.findall('.//w:t',NS):

@@ -98,14 +98,15 @@ def activity_group(report,name='ECEWS',paediatric=False):
     if name=='ECEWS':return activity['groups']['paediatrics' if paediatric else 'all']
     return activity['paediatric_states' if paediatric else 'states'].get(name,{key:None for key in KEYS})
 
-def calculate_activity(conn,schema,table,snapshot_id,sheet,start,end,comparison_id='',comparison_sheet='',progress=None,iit_start='2026-10-01',iit_end='2026-10-17'):
+def calculate_activity(conn,schema,table,snapshot_id,sheet,start,end,comparison_id='',comparison_sheet='',progress=None,iit_start='2026-10-01',iit_end='2026-10-17',unique_only=False):
     from psycopg import sql
     counts=ActivityCounts(start,end,bool(comparison_id),iit_start,iit_end);notify=progress or (lambda event:None)
     fields=sql.SQL(',').join(sql.SQL('s.data->>{}').format(sql.Literal(f)) for f in EVENT_FIELDS)
     def stream(schema,table,snapshot,sheet,name):
         with conn.cursor(name=name) as cursor:
             cursor.itersize=2000
-            cursor.execute(sql.SQL('SELECT s.source_row,{} FROM {} s WHERE s.source_sha256=%s AND s.sheet=%s').format(fields,sql.Identifier(schema,table)),(snapshot,sheet))
+            condition=sql.SQL(" AND lower(btrim(s.data->>'FingerPrint Status'))='enrolled'" if unique_only else '')
+            cursor.execute(sql.SQL('SELECT s.source_row,{} FROM {} s WHERE s.source_sha256=%s AND s.sheet=%s{}').format(fields,sql.Identifier(schema,table),condition),(snapshot,sheet))
             for record in cursor:yield record[0],dict(zip(EVENT_FIELDS,record[1:]))
     with tempfile.TemporaryDirectory(prefix='linelist_activity_') as folder:
         index=MatchIndex(str(Path(folder)/'matching.sqlite'))
